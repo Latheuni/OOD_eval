@@ -1,0 +1,23 @@
+main
+- write_iterval:
+- output_dir:
+- verbose:
+dataset
+- name:
+- data_dir:
+- batch_size:
+- train_techs:
+- test_techs:
+- validation_size:
+- min_celltypes:
+- max_epochs:
+- accelerator:
+network
+- input_dim:
+- output_dim:
+- nodes_per_layer:
+- num_hidden_layer:
+- activation:
+training
+- loss_function:
+- learning_rate:

@@ -1,0 +1,24 @@
+main
+- write_iterval: "epoch"
+- output_dir: "C:/Users/latheuni/OneDrive - UGent/PhD/Paper 2/Results/LogitNorm/Debug/Linear/"
+- verbose: "True"
+dataset
+- name: "Pancreas"
+- data_dir: "C:/Users/latheuni/OneDrive - UGent/PhD/Data/Pancreas/human_pancreas_norm_complexBatch.h5ad"
+- batch_size: 128
+- train_techs: ['inDrop1','inDrop2','inDrop3','inDrop4']
+- test_techs: ["celseq"]
+- validation_size: 0.2
+- min_celltypes: 10
+- max_epochs: 50
+- accelerator: "gpu"
+network
+- model: 'linear'
+- input_dim: 100
+- output_dim: 100
+- nodes_per_layer: /
+- num_hidden_layer: 0
+- activation: "relu"
+training
+- loss_function: "logitnorm"
+- learning_rate: 1e04

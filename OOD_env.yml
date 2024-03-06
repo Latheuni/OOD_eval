@@ -1,0 +1,23 @@
+name: OOD_env
+channels: 
+- conda-forge
+- default
+dependencies:
+- pip
+- python
+- numpy
+- pandas
+- anndata
+- seaborn
+- ipykernel
+- matplotlib
+- networkx
+- nbformat 
+- python-igraph
+- leidenalg
+- scanpy
+- pytorch
+- lightning
+- pip:
+  - scib
+  - wandb
