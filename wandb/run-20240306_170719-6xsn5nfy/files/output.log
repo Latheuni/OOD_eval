@@ -1,0 +1,18 @@
+[34m[1mwandb[39m[22m: logging graph, to disable use `wandb.watch(log_graph=False)`
+GPU available: False, used: False
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+Running in `fast_dev_run` mode: will run the requested loop using 1 batch(es). Logging and checkpointing is suppressed.
+Traceback (most recent call last):
+  File "/kyukon/home/gent/438/vsc43883/OOD_eval/main.py", line 262, in <module>
+    train_step(args.config_file)
+  File "/kyukon/home/gent/438/vsc43883/OOD_eval/main.py", line 189, in train_step
+    trainer.fit(model, train_dataloaders = DataLoader, val_dataloaders = DataLoader)
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 603, in fit
+    call._call_and_handle_interrupt(
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 38, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 628, in _fit_impl
+    raise MisconfigurationException(
+lightning_lite.utilities.exceptions.MisconfigurationException: You cannot pass `train_dataloader` or `val_dataloaders` to `trainer.fit(datamodule=...)`

@@ -1,0 +1,22 @@
+[34m[1mwandb[39m[22m: logging graph, to disable use `wandb.watch(log_graph=False)`
+GPU available: False, used: False
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+Running in `fast_dev_run` mode: will run the requested loop using 1 batch(es). Logging and checkpointing is suppressed.
+Traceback (most recent call last):
+  File "/kyukon/home/gent/438/vsc43883/OOD_eval/main.py", line 262, in <module>
+    train_step(args.config_file)
+  File "/kyukon/home/gent/438/vsc43883/OOD_eval/main.py", line 189, in train_step
+    trainer.fit(model,DataLoader)
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 603, in fit
+    call._call_and_handle_interrupt(
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 38, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 633, in _fit_impl
+    self._data_connector.attach_data(
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/data_connector.py", line 140, in attach_data
+    _check_dataloader_none(train_dataloaders, self._train_dataloader_source, self.trainer.state.fn)
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/data_connector.py", line 598, in _check_dataloader_none
+    raise ValueError(
+ValueError: An invalid dataloader was passed to `Trainer.fit(train_dataloaders=...)`. Either pass the dataloader to the `.fit()` method OR implement `def train_dataloader(self):` in your LightningModule/LightningDataModule.

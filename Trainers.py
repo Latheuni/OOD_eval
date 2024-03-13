@@ -3,11 +3,11 @@ import os
 import wandb
 import torch
 from torch import nn
-import lightning as L
+import pytorch_lightning as L
 import torch.nn.functional as F
-from lightning.pytorch import Trainer
-from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.callbacks import BasePredictionWriter
+from pytorch_lightning import Trainer
+from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks import BasePredictionWriter
 
 
 # Start weigts and biases

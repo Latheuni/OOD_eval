@@ -1,0 +1,28 @@
+[34m[1mwandb[39m[22m: logging graph, to disable use `wandb.watch(log_graph=False)`
+GPU available: False, used: False
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+Running in `fast_dev_run` mode: will run the requested loop using 1 batch(es). Logging and checkpointing is suppressed.
+/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/utilities/parsing.py:101: UserWarning: attribute 'NN' removed from hparams because it cannot be pickled
+  rank_zero_warn(f"attribute '{k}' removed from hparams because it cannot be pickled")
+Traceback (most recent call last):
+  File "/kyukon/home/gent/438/vsc43883/OOD_eval/main.py", line 261, in <module>
+    train_step(args.config_file)
+  File "/kyukon/home/gent/438/vsc43883/OOD_eval/main.py", line 189, in train_step
+    trainer.fit(model,  DataLoader)
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 603, in fit
+    call._call_and_handle_interrupt(
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 38, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 645, in _fit_impl
+    self._run(model, ckpt_path=self.ckpt_path)
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1037, in _run
+    self._call_setup_hook()  # allow user to setup lightning_module in accelerator environment
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1284, in _call_setup_hook
+    self._call_lightning_datamodule_hook("setup", stage=fn)
+  File "/apps/gent/RHEL8/zen3-ampere-ib/software/PyTorch-Lightning/1.8.4-foss-2022a-CUDA-11.7.0/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1361, in _call_lightning_datamodule_hook
+    return fn(*args, **kwargs)
+  File "/kyukon/home/gent/438/vsc43883/OOD_eval/Datasets.py", line 86, in setup
+    train_val_x_tensor, train_val_y = PancreasDataset(
+ValueError: too many values to unpack (expected 2)

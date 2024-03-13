@@ -19,11 +19,15 @@ class LinearNetwork(nn.Sequential):  # Deep Linear network
         self.predictor = nn.ModuleList()
 
         for i in range(num_hidden_layers + 1):
-            self.predictor.append(nn.linear(dims[i], dims[i + 1]))
+            self.predictor.append(nn.Linear(dims[i], dims[i + 1]))
+        print('predictor', self.predictor[0])
 
     def forward(self, x):
+        print(self.predictor)
         for i, l in enumerate(self.predictor):
-            x = self.l(x)
+            print(i)
+            print(l)
+            x = l(x)
         return x
 
 
@@ -48,7 +52,7 @@ class NonLinearNetwork(nn.Sequential):  # Deep Linear network
 
         predictor = nn.ModuleList()
         for i in range(num_hidden_layers + 1):
-            self.predictor.append(nn.linear(dims[i], dims[i + 1]))
+            self.predictor.append(nn.Linear(dims[i], dims[i + 1]))
 
             if i != num_hidden_layers:
                 if activation == "elu":

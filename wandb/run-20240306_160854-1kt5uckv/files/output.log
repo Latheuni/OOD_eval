@@ -1,0 +1,8 @@
+[34m[1mwandb[39m[22m: logging graph, to disable use `wandb.watch(log_graph=False)`
+Traceback (most recent call last):
+  File "/kyukon/home/gent/438/vsc43883/OOD_eval/main.py", line 260, in <module>
+    train_step(args.config_file)
+  File "/kyukon/home/gent/438/vsc43883/OOD_eval/main.py", line 182, in train_step
+    max_epochs=main_config["max_epochs"],
+               ~~~~~~~~~~~^^^^^^^^^^^^^^
+KeyError: 'max_epochs'

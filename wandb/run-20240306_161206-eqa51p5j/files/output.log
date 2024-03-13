@@ -1,0 +1,19 @@
+[34m[1mwandb[39m[22m: logging graph, to disable use `wandb.watch(log_graph=False)`
+Traceback (most recent call last):
+  File "/kyukon/home/gent/438/vsc43883/OOD_eval/main.py", line 260, in <module>
+    train_step(args.config_file)
+  File "/kyukon/home/gent/438/vsc43883/OOD_eval/main.py", line 180, in train_step
+    trainer = Trainer(
+              ^^^^^^^^
+  File "/apps/gent/RHEL8/zen2-ib/software/PyTorch-Lightning/2.1.3-foss-2023a/lib/python3.11/site-packages/pytorch_lightning/utilities/argparse.py", line 70, in insert_env_defaults
+    return fn(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/apps/gent/RHEL8/zen2-ib/software/PyTorch-Lightning/2.1.3-foss-2023a/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 401, in __init__
+    self._accelerator_connector = _AcceleratorConnector(
+                                  ^^^^^^^^^^^^^^^^^^^^^^
+  File "/apps/gent/RHEL8/zen2-ib/software/PyTorch-Lightning/2.1.3-foss-2023a/lib/python3.11/site-packages/pytorch_lightning/trainer/connectors/accelerator_connector.py", line 146, in __init__
+    self._accelerator_flag = self._choose_gpu_accelerator_backend()
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/apps/gent/RHEL8/zen2-ib/software/PyTorch-Lightning/2.1.3-foss-2023a/lib/python3.11/site-packages/pytorch_lightning/trainer/connectors/accelerator_connector.py", line 366, in _choose_gpu_accelerator_backend
+    raise MisconfigurationException("No supported gpu backend found!")
+lightning_fabric.utilities.exceptions.MisconfigurationException: No supported gpu backend found!
