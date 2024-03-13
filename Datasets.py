@@ -7,55 +7,27 @@ import scanpy as sc
 from scipy import sparse
 from torch.utils.data import DataLoader, Dataset
 from sklearn.model_selection import train_test_split
-import lightning as L
+import pytorch_lightning as L
 
 
 ### Helper functions
-def filter_counts_h5ad(data, labels, n):
-    """Filter celltypes with less than 10 instances
-    Parameters
-    ----------
-    data : annData
-    labels : Series
-    n : int
-        celltypes with less than n occurences will be filtered out
-    """
-    s = labels.value_counts() < n
-    celltype_to_filter = s.index[s].to_list()
-    idx_keep = [l not in celltype_to_filter for l in labels]
 
-    return (data[idx_keep, :], labels[idx_keep])
 
 
 ## Dataset functions
-class PancreasDataset(Dataset):
-    def __init__(self, data_h5ad, tech_list, min_celltypes):
-        h5ad = sc.read_h5ad(data_h5ad)  # Should delete this from memory
-        self.tech_list = tech_list
-        self.labels = h5ad.obs["celltype"]
-        self.data = sparse.csr_matrix(h5ad.X)
-        self.tech_features = h5ad.obs["tech"]
-        self.cut_off = min_celltypes
-
+class PancreasDataset(Dataset):  # Input for the LightningDataModule
+    def __init__(self, data, labels):
+        self.data = data
+        self.labels = labels
+        
     def __len__(self):
         return len(self.labels)
+    
+    def n_classes(self):
+        return len(np.unique(self.labels))
 
     def __getitem__(self, idx):
-        # Select correct subpart of the data
-
-        idx_data = [t in self.tech_list for t in self.tech_features]
-        data_tech = self.data[idx_data, :]
-
-        # Filter celltypes with less than 10 occurences
-        data_filter, labels_filter = filter_counts_h5ad(
-            self.data, self.labels, self.cut_off
-        )
-
-        # Retrieve sample
-        data_filter_array = np.array(
-            data_filter[idx, :].todense()
-        ).flatten()  # convert numpy matrix to array and flatten from [[]] format
-        return torch.from_numpy(data_filter_array), labels_filter[idx]
+        return self.data[idx,:], self.labels[idx]
 
 
 class LitPancreasDataModule(L.LightningDataModule):
@@ -76,37 +48,69 @@ class LitPancreasDataModule(L.LightningDataModule):
         self.val_size = validation_size
         self.min_celltypes = min_celltypes
 
-        def train_validation_split(self, train_data_x, train_data_y):
-            X_train, X_val, y_train, y_val = train_test_split(
-                train_data_x.numpy(),
-                train_data_y,
-                test_size=self.val_size,
-                stratify=train_data_y,
-                random_state=0,
-            )
-            val_data = torch.from_numpy(X_val), y_val
-            train_data = torch.from_numpy(X_train), y_train
-            return train_data, val_data
+    def prepare_data(self):
+        h5ad = sc.read_h5ad(self.data_dir)
+        self.tech_features = h5ad.obs["tech"]
+        self.labels = h5ad.obs["celltype"]
+        self.data = sparse.csr_matrix(h5ad.X)
 
-        def setup(self):
-            train_val_x_tensor, train_val_y = PancreasDataset(
-                self.data_dir, self.train_techs, self.min_celltypes
-            )
-            data_train, data_val = self.train_validation_split(
-                train_val_x_tensor, train_val_y
-            )
+    def setup(self, stage):
+        idx_train = [t in self.train_techs for t in self.tech_features]
+        idx_test = [t in self.test_techs for t in self.tech_features]
 
-            self.data_train = data_train
-            self.data_val = data_val
-            self.data_test = PancreasDataset(
-                self.data_dir, self.test_techs, self.min_celltypes
-            )
 
-        def train_dataloader(self):
-            return DataLoader(self.data_train, batchsize=self.batch)
+        labels_train, data_train = self.labels[idx_train], self.data[idx_train,:]
+        data_trainfilter, labels_trainfilter = self.filter_counts_h5ad(
+            data_train, labels_train, self.min_celltypes
+        )
 
-        def val_dataloader(self):
-            return DataLoader(self.data_val, batchsize=self.batch)
+        X_train, X_val, y_train, y_val = train_test_split(
+        data_trainfilter,
+        labels_trainfilter,
+        test_size=self.val_size,
+        stratify=labels_trainfilter,
+        random_state=0,
+        )
 
-        def test_dataloader(self):
-            return DataLoader(self.data_test, batchsize=self.batch)
+        self.data_train = PancreasDataset(torch.from_numpy(X_train.todense()), y_train) #Check this operation locally
+        print('shape data', torch.from_numpy(X_train.todense()).size())
+        self.data_val = PancreasDataset(torch.from_numpy(X_val.todense()), y_val)
+
+        labels_test, data_test = self.labels[idx_test], self.data[idx_test,:]
+        data_testfilter, labels_testfilter = self.filter_counts_h5ad(
+            data_test, labels_test, self.min_celltypes
+        )
+        self.data_test = PancreasDataset(torch.from_numpy(data_testfilter.todense()), labels_testfilter)
+
+    def train_dataloader(self):
+        return DataLoader(self.data_train, batch_size=self.batch)
+
+    def val_dataloader(self):
+        return DataLoader(self.data_val, batch_size=self.batch)
+
+    def test_dataloader(self):
+        return DataLoader(self.data_test, batch_size=self.batch)
+
+    def filter_counts_h5ad(self, data, labels, n):
+        """Filter celltypes with less than 10 instances
+        Parameters
+        ----------
+        data : annData
+        labels : Series
+        n : int
+            celltypes with less than n occurences will be filtered out
+        """
+        s = labels.value_counts() < n
+        celltype_to_filter = s.index[s].to_list()
+        idx_keep = [l not in celltype_to_filter for l in labels]
+
+        return (data[idx_keep, :], labels[idx_keep])
+    def n_classes(self):
+        h5ad = sc.read_h5ad(self.data_dir)
+        self.tech_features = h5ad.obs["tech"]
+        self.labels = h5ad.obs["celltype"]
+        self.data = sparse.csr_matrix(h5ad.X)
+        data_filter, labels_filter = self.filter_counts_h5ad(
+            self.data, self.labels, self.min_celltypes
+        )
+        return len(np.unique(labels_filter))
