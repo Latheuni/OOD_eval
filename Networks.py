@@ -7,7 +7,6 @@ from torch import nn
 class LinearNetwork(nn.Sequential):  # Deep Linear network
     def __init__(self, input_dim, output_dim, nodes_per_layer, num_hidden_layers):
         super(LinearNetwork, self).__init__()
-
         if num_hidden_layers == 0:
             dims = [input_dim] + [output_dim]
         elif isinstance(nodes_per_layer, list):
@@ -17,16 +16,11 @@ class LinearNetwork(nn.Sequential):  # Deep Linear network
             dims = [input_dim] + num_hidden_layers * [nodes_per_layer] + [output_dim]
 
         self.predictor = nn.ModuleList()
-
-        for i in range(num_hidden_layers + 1):
+        for i in range(0, num_hidden_layers + 1):
             self.predictor.append(nn.Linear(dims[i], dims[i + 1]))
-        print('predictor', self.predictor[0])
 
     def forward(self, x):
-        print(self.predictor)
         for i, l in enumerate(self.predictor):
-            print(i)
-            print(l)
             x = l(x)
         return x
 

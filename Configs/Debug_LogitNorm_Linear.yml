@@ -1,12 +1,14 @@
 main:
-  write_iterval: "epoch"
+  write_interval: "epoch"
   output_dir: "/data/gent/vo/000/gvo00070/vsc43883/Results_OOD/LogitNorm/Debug/Linear/"
+  name: "Debug_logitNorm_Linear_nolayers"
   verbose: "True"
-  debug: "True"
+  debug: "False"
 dataset:
   name: "Pancreas"
   n_classes: 
   data_dir: "/data/gent/438/vsc43883/Data/Pancreas/human_pancreas_norm_complexBatch.h5ad"
+  label_conversion_file: "/data/gent/438/vsc43883/Data/Pancreas/Pancreas_conversion.json"
   batch_size: 128
   train_techs: 
     - 'inDrop1'
@@ -19,14 +21,14 @@ dataset:
   min_celltypes: 10
 network:
   model: 'linear'
-  input_dim: 100
-  output_dim: 100
-  nodes_per_layer: /
+  input_dim: 19093
+  output_dim: 13
+  nodes_per_layer: 100
   num_hidden_layer: 0
   activation: "relu"
 training:
   loss_function: "logitnorm"
   learning_rate: 1e04
-  max_epochs: 50
+  max_epochs: 1000
   accelerator: "cpu"
   devices: 1

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 # source: OpenOOD
 class LogitNormLoss(nn.Module):
-    def __init__(self, tau=0.04):
+    def __init__(self, tau=0.04): # 0.04 is used in the paper and benchmark
         super(LogitNormLoss, self).__init__()
         self.tau = tau
 
