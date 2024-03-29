@@ -2,9 +2,6 @@
 import numpy as np
 from sklearn import metrics
 
-# Start weigts and biases
-# wandb_logger = WandbLogger()
-# trainer = Trainer(logger=wandb_logger)
 
 
 def acc(pred, label):
@@ -20,10 +17,17 @@ def acc(pred, label):
 # Code from openOOD benchmark:  https://github.com/Jingkang50/OpenOOD/blob/main/openood/evaluators/metrics.py#L40
 # accessed 05/03/2024
 def auc_and_fpr_recall(conf, label, tpr_th):
-    # following convention in ML we treat OOD as positive
-    ood_indicator = np.zeros_like(label)
-    ood_indicator[label == -1] = 1
+    """
+    Evaluates if the method correctly identified the OOD samples by assigning low confidence scores
+    Label should be an indicator: OOD or not (in real-life)
 
+    """
+    # following convention in ML we treat OOD as positive
+    print('label', label)
+    ood_indicator = np.zeros_like(label)
+    print('OOD_indicator', ood_indicator)
+    ood_indicator[label == -1] = 1
+    print(conf)
     # in the postprocessor we assume ID samples will have larger
     # "conf" values than OOD samples
     # therefore here we need to negate the "conf" values

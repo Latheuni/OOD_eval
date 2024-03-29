@@ -44,7 +44,7 @@ class NonLinearNetwork(nn.Sequential):  # Deep Linear network
         else:
             dims = [input_dim] + num_hidden_layers * [nodes_per_layer] + [output_dim]
 
-        predictor = nn.ModuleList()
+        self.predictor = nn.ModuleList()
         for i in range(num_hidden_layers + 1):
             self.predictor.append(nn.Linear(dims[i], dims[i + 1]))
 
@@ -52,15 +52,15 @@ class NonLinearNetwork(nn.Sequential):  # Deep Linear network
                 if activation == "elu":
                     self.predictor.append(nn.Elu())
                 elif activation == "relu":
-                    self.predictor.append(nn.LeakyReLu())
+                    self.predictor.append(nn.LeakyReLU())
             else:
 
                 if activation == "elu":
                     self.predictor.append(nn.Elu())
                 elif activation == "relu":
-                    self.predictor.append(nn.LeakyReLu())
+                    self.predictor.append(nn.LeakyReLU())
 
     def forward(self, x):
         for i, l in enumerate(self.predictor):
-            x = self.l(x)
+            x = l(x)
         return x

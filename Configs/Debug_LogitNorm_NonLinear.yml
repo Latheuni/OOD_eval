@@ -1,7 +1,7 @@
 main:
   write_interval: "epoch"
-  output_dir: "/data/gent/vo/000/gvo00070/vsc43883/Results_OOD/LogitNorm/Debug/Linear/"
-  name: "Debug_logitNorm_Linear_nolayers"
+  output_dir: "/data/gent/vo/000/gvo00070/vsc43883/Results_OOD/LogitNorm/Debug/NonLinear/"
+  name: "Debug_logitNorm_NonLinear_1layers"
   verbose: "True"
   debug: "False"
   cpus: 1
@@ -23,11 +23,11 @@ dataset:
   test_size: 0.2
   min_celltypes: 10
 network:
-  model: 'linear'
+  model: 'non-linear'
   input_dim: 19093
   output_dim: 13
   nodes_per_layer: 100
-  num_hidden_layer: 0
+  num_hidden_layer: 3
   activation: "relu"
 training:
   loss_function: "logitnorm"
