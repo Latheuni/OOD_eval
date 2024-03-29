@@ -76,7 +76,7 @@ class LitPancreasDataModule(L.LightningDataModule):
 
     def setup(self, stage):
         # Data setup train
-        if verbose == "True":
+        if self.verbose == "True":
             print('\n')
             print('--- Data characteristics ---')
             print('Total size data', self.data.shape)
@@ -108,7 +108,7 @@ class LitPancreasDataModule(L.LightningDataModule):
         
         labels_train = [self.conversion_dict[i] for i in y_train]
         self.data_train = PancreasDataset(torch.from_numpy(X_train.todense()), torch.from_numpy(np.array(labels_train))) 
-        print(np.unique(labels_train))
+        print('Cell type classes', np.unique(labels_train))
 
 
         labels_val = [self.conversion_dict[i] for i in y_val]
@@ -117,7 +117,7 @@ class LitPancreasDataModule(L.LightningDataModule):
         labels_test_conv = [self.conversion_dict[i] for i in y_test]
         data_test = torch.from_numpy(X_test.todense())
         labels_test = torch.from_numpy(np.array(labels_test_conv))
-        if verbose == "True":
+        if self.verbose == "True":
             print('Size training data', X_train.shape)
             print('Size validation data', X_val.shape)
             print('Size test data', X_test.shape)
@@ -133,7 +133,7 @@ class LitPancreasDataModule(L.LightningDataModule):
         data_OOD = torch.from_numpy(data_OODfilter.todense())
         labels_OOD = torch.from_numpy(np.array(labels_OODconverted))
 
-        if verbose == "True":
+        if self.verbose == "True":
             print('Size OOD data', data_OODfilter.shape)
 
         # Setup test data
@@ -152,15 +152,14 @@ class LitPancreasDataModule(L.LightningDataModule):
             OOD_celltypes = pd.DataFrame([None])
         else:
             OOD_celltypes = pd.DataFrame(OOD_celltypes)
-            if verbose == "True":
-             print('OOD celltypes', np.unique(OOD_celltypes))
+            if self.verbose == "True":
+                print('OOD celltypes', np.unique(OOD_celltypes))
                 print('percentage OOD celltypes', len(OOD_celltypes)/labels_test_total.size(dim=0))
 
         #if not os.path.exists(self.data_dir + 'OOD_ind_pancreas'+ '_celltypes_' + str(self.name) + '.csv'):
         OOD_celltypes.to_csv(self.data_dir + 'OOD_ind_pancreas'+ '_celltypes_' + str(self.name) + '.csv')
-        if verbose == "True":
+        if self.verbose == "True":
             print('Size total test data', data_test_total.size())
-            print('Size total test labels', labels_test_total.size())
             print ('\n')
         self.data_test = PancreasDataset(data_test_total, labels_test_total )
        

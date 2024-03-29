@@ -132,7 +132,7 @@ class LitBasicNN(L.LightningModule):
         )
         return optimizer
 
-def train_step(config_file):
+def train_step(config_file, train_test_together = False):
 
     # Read in parameters
     main_config, dataset_config, network_config, training_config = read_config(
@@ -221,17 +221,19 @@ def train_step(config_file):
         #accelerator=training_config["accelerator"],
         #devices = training_config['devices'],
     )
-
     trainer.fit(model, DataLoader)
-
-
-def test_step(config_file, filename):
+    
+    if train_test_together:
+        return model
+def test_step(config_file, model):
+    """
+    model can be or path to save checkpoint or an actual model
+    """
     # Read in Config
     main_config, dataset_config, network_config, training_config = read_config(
-        config_file
+        config_file)
     verbose = main_config["verbose"]
 
-    ## For the dataset evaluation
     # Define the dataset
     if verbose == "True":
         print('Read in model and set up analysis')
@@ -254,8 +256,9 @@ def test_step(config_file, filename):
         OOD_label_celltype = pd.read_csv(dataset_config["data_dir"] + 'OOD_ind_pancreas'+ '_celltypes_' + main_config['name'] + '.csv', index_col = 0)
 
     # load model
-    os.chdir(main_config["output_dir"])
-    model = LitBasicNN.load_from_checkpoint(filename)
+    if type(model) is str:
+        os.chdir(main_config["output_dir"])
+        model = LitBasicNN.load_from_checkpoint(filename)
 
     # Logger
     Logger = TensorBoardLogger(main_config["output_dir"] + 'tb_logger/', name =main_config['name'])
@@ -340,6 +343,9 @@ def save_dict_to_json(d_results, name_analysis):
     with open(str(name_analysis) + "_results.json", "w") as f1:
             json.dump(d_results, f1, default = default)
 
+#######################
+### Actual analysis ###
+#######################
 
 # Arguments
 ## Parameters
@@ -356,22 +362,30 @@ if args.Run_step == "train":
     start = time.time()
     train_step(args.config_file)
     end = time.time()
-    print('Total training time', end - start)
+    if main_config['verbose'] == "True":
+        print('Total training time', end - start)
+
 elif args.Run_step == "test":
     start = time.time()
     print(main_config['output_dir'] + args.filename)
     predictions = test_step(args.config_file, main_config['output_dir'] + args.filename)
     end = time.time()
-    print('Total OOD testing time', end - start)
+    if main_config['verbose'] == "True":
+        print('Total OOD testing time', end - start)
+
 elif args.Run_step == "all":
+    # Training
     start = time.time()
-    train_step(args.config_file)
+    model = train_step(args.config_file, train_test_together = True)
     end = time.time()
-    print('Total training time', end - start)
+    if main_config['verbose'] == "True":
+        print('Total training time', end - start)
+
+    # Testing
     start = time.time()
-    print(main_config['output_dir'] + args.filename)
-    scores, ytrue, predictions = test_step(args.config_file, main_config['output_dir'] + args.filename)
+    scores, ytrue, predictions = test_step(args.config_file,  model)
     end = time.time()
-    print('Total OOD testing time', end - start)
-    print('predictions', predictions)
+    if main_config['verbose'] == "True":    
+        print('Total OOD testing time', end - start)
+    print('predictions', predictions.size())
 
