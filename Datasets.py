@@ -4,12 +4,12 @@ import torch
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import anndata as ad
 from scipy import sparse
 from torch.utils.data import DataLoader, Dataset
 from sklearn.model_selection import train_test_split
 import pytorch_lightning as L
 import json
-
 
 
 ## Lightning 
@@ -29,6 +29,11 @@ class PancreasDataset(Dataset):  # Input for the LightningDataModule
     def __getitem__(self, idx):
         return self.data[idx,:], self.labels[idx]
 
+    def get_data(self):
+        return(self.data)
+    
+    def get_labels(self):
+        return(self.labels)
 
 ## DataModules
 class LitPancreasDataModule(L.LightningDataModule):
@@ -71,7 +76,7 @@ class LitPancreasDataModule(L.LightningDataModule):
     def prepare_data(self):
         h5ad = sc.read_h5ad(self.data_dir + self.data_file)
         self.tech_features = h5ad.obs["tech"]
-        self.labels = h5ad.obs["celltype"]
+        self.labels = h5ad.obs[['celltype', 'tech']] # numpy matrix
         self.data = sparse.csr_matrix(h5ad.X)
 
     def setup(self, stage):
@@ -83,9 +88,9 @@ class LitPancreasDataModule(L.LightningDataModule):
         train_ratio = 1 - (self.val_size + self.test_size)
         idx_ID = [t in self.train_techs for t in self.tech_features]
         
-
+        
         # ID dataset: split in train-val-test
-        labels_train, data_train = self.labels[idx_ID], self.data[idx_ID,:] # Note currently not 60 - 20 - 20. Is this a problem?
+        labels_train, data_train = self.labels.iloc[idx_ID,:], self.data[idx_ID,:] # Note currently not 60 - 20 - 20. Is this a problem?
         data_trainfilter, labels_trainfilter = self.filter_counts_h5ad(
             data_train, labels_train, self.min_celltypes
         )
@@ -94,7 +99,7 @@ class LitPancreasDataModule(L.LightningDataModule):
         data_trainfilter,
         labels_trainfilter,
         test_size=1-train_ratio,
-        stratify=labels_trainfilter,
+        stratify=labels_trainfilter.iloc[:,0],
         random_state=0,
         )
 
@@ -102,19 +107,22 @@ class LitPancreasDataModule(L.LightningDataModule):
         X_val_test,
         y_val_test,
         test_size=self.test_size/(self.val_size + self.test_size),
-        stratify=y_val_test,
+        stratify=y_val_test.iloc[:,0],
         random_state=0,
         )
-        
-        labels_train = [self.conversion_dict[i] for i in y_train]
-        self.data_train = PancreasDataset(torch.from_numpy(X_train.todense()), torch.from_numpy(np.array(labels_train))) 
-        print('Cell type classes', np.unique(labels_train))
 
+        labels_train = [self.conversion_dict[i] for i in y_train.iloc[:,0]]
+        self.tech_train = y_train.iloc[:,1]
+        self.data_train = PancreasDataset(torch.from_numpy(X_train.todense()), torch.from_numpy(np.array(labels_train)))
+        if self.verbose == "True": 
+            print('Cell type classes', np.unique(labels_train))
 
-        labels_val = [self.conversion_dict[i] for i in y_val]
+    
+        labels_val = [self.conversion_dict[i] for i in y_val.iloc[:,0]]
+        self.tech_val = y_val.iloc[:,1]
         self.data_val = PancreasDataset(torch.from_numpy(X_val.todense()), torch.from_numpy(np.array(labels_val)))
-
-        labels_test_conv = [self.conversion_dict[i] for i in y_test]
+        
+        labels_test_conv = [self.conversion_dict[i] for i in y_test.iloc[:,0]]
         data_test = torch.from_numpy(X_test.todense())
         labels_test = torch.from_numpy(np.array(labels_test_conv))
         if self.verbose == "True":
@@ -125,11 +133,12 @@ class LitPancreasDataModule(L.LightningDataModule):
         # Data setup OOD
         idx_OOD = np.array([t in self.OOD_techs for t in self.tech_features])
 
-        labels_OOD, data_OOD= self.labels[idx_OOD], self.data[idx_OOD,:]
+        labels_OOD, data_OOD= self.labels.iloc[idx_OOD,:], self.data[idx_OOD,:]
+        
         data_OODfilter, labels_OODfilter = self.filter_counts_h5ad(
             data_OOD, labels_OOD, self.min_celltypes
         )
-        labels_OODconverted = [self.conversion_dict[i] for i in labels_OODfilter]
+        labels_OODconverted = [self.conversion_dict[i] for i in labels_OODfilter.iloc[:,0]]
         data_OOD = torch.from_numpy(data_OODfilter.todense())
         labels_OOD = torch.from_numpy(np.array(labels_OODconverted))
 
@@ -139,6 +148,7 @@ class LitPancreasDataModule(L.LightningDataModule):
         # Setup test data
         data_test_total = torch.cat((data_test, data_OOD),0)
         labels_test_total = torch.cat((labels_test, labels_OOD),0)
+        self.tech_test = np.concatenate((y_test.iloc[:,1] , labels_OODfilter.iloc[:,1]))
 
         ## indicators OOD dataset
         OOD_ind = pd.DataFrame([1] *data_test.size(dim=0) + [-1]*data_OOD.size(dim=0)) 
@@ -149,6 +159,8 @@ class LitPancreasDataModule(L.LightningDataModule):
         OOD_ind = pd.DataFrame([-1  if i not in np.unique(labels_train) else 1 for i in labels_test_total ])
         OOD_celltypes = [i.numpy() for i in labels_test_total if i.numpy() not in np.unique(labels_train)]
         if OOD_celltypes == []:
+            if self.verbose == "True":
+                print('No OOD celtypes')
             OOD_celltypes = pd.DataFrame([None])
         else:
             OOD_celltypes = pd.DataFrame(OOD_celltypes)
@@ -159,10 +171,11 @@ class LitPancreasDataModule(L.LightningDataModule):
         #if not os.path.exists(self.data_dir + 'OOD_ind_pancreas'+ '_celltypes_' + str(self.name) + '.csv'):
         OOD_celltypes.to_csv(self.data_dir + 'OOD_ind_pancreas'+ '_celltypes_' + str(self.name) + '.csv')
         if self.verbose == "True":
+            print('percentage OOD dataset', len(labels_OOD)/labels_test_total.size(dim=0))
             print('Size total test data', data_test_total.size())
             print ('\n')
         self.data_test = PancreasDataset(data_test_total, labels_test_total )
-       
+    
 
     def train_dataloader(self):
         return DataLoader(self.data_train, batch_size=self.batch, num_workers = self.cpus)
@@ -187,21 +200,54 @@ class LitPancreasDataModule(L.LightningDataModule):
         n : int
             celltypes with less than n occurences will be filtered out
         """
-        s = labels.value_counts() < n
+        s = labels['celltype'].value_counts() < n
         celltype_to_filter = s.index[s].to_list()
-        idx_keep = [l not in celltype_to_filter for l in labels]
+        idx_keep = [l not in celltype_to_filter for l in labels.iloc[:,0]]
 
-        return (data[idx_keep, :], labels[idx_keep])
+        return (data[idx_keep, :], labels.iloc[idx_keep,:])
 
     def n_classes(self):
         h5ad = sc.read_h5ad(self.data_dir + self.data_file)
         self.tech_features = h5ad.obs["tech"]
-        self.labels = h5ad.obs["celltype"]
+        self.labels = h5ad.obs[["celltype", "tech"]]
         self.data = sparse.csr_matrix(h5ad.X)
         data_filter, labels_filter = self.filter_counts_h5ad(
             self.data, self.labels, self.min_celltypes
         )
-        return len(np.unique(labels_filter))
+        return len(np.unique(labels_filter.iloc[:,0]))
     
+    def make_UMAP_manifold(self, data, labels, techs, filename):
+        # Read in data
+        adata = ad.AnnData(data.numpy())
+        adata.obs['celltype'] = labels
+        adata.obs['tech'] = techs
+
+        # Compute UMAP
+        sc.pp.pca(adata)
+        sc.pp.neighbors(adata)
+        sc.tl.umap(adata)
+
+        adata.write_h5ad(self.data_dir + filename)
+        self.anndata_umap = adata
+
+    def return_data_UMAP(self):
+        return self.tech_test, self.data_test.get_data(), self.data_test.get_labels()
+
+    def plot_UMAP_colour(self, filename, colours_ind):
+        if not os.path.exists(self.data_dir + filename):
+            fig = sc.pl.umap(self.anndata_umap, color = colours_ind, palette = 'tab20', return_fig = True)
+            fig.savefig(self.data_dir + filename)
+        else: 
+            if self.verbose == "True":
+                print('UMAP already exists')
+
+    def plot_UMAP(self, filename):
+        if not os.path.exists(self.data_dir + filename):
+            fig = sc.pl.umap(self.anndata_umap, color = ["tech"], palette ='tab20', return_fig = True)
+            fig.savefig(self.data_dir + filename)
+        else: 
+            if self.verbose == "True":
+                print('UMAP already exists')
     
-    
+
+

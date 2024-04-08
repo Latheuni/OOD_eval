@@ -18,11 +18,12 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
     BasePredictionWriter,
-    LearningRateMonitor
+    LearningRateMonitor,
+    DeviceStatsMonitor
 )
 from torcheval.metrics import MulticlassAccuracy
 from pytorch_lightning.loggers import TensorBoardLogger
-from Metrics import auc_and_fpr_recall
+from Metrics import *
 ## Own imports
 from utils import read_config
 from Datasets import LitPancreasDataModule
@@ -35,7 +36,7 @@ from Losses import LogitNormLoss
 import torch
 from pytorch_lightning.callbacks import BasePredictionWriter
 
-
+# Writes predictions in .pt format
 class CustomWriter(BasePredictionWriter):
     def __init__(self, config_file):
         super().__init__(
@@ -115,14 +116,14 @@ class LitBasicNN(L.LightningModule):
             self.scores = torch.cat((self.scores, scores),0 )
         return scores, y
 
-    def predict_step(self, batch, batch_idx): # Assume loss needs to be minimized
+    def predict_step(self, batch, batch_idx): # Loss needs to be minimized, max scores are correct label
         x,y = batch
         scores = self.NN(x)
         if batch_idx == 0:
-            self.predictions = torch.argmin(scores, dim=1)
+            self.predictions = torch.argmax(scores, dim=1)
         else:
-            self.predictions = torch.cat((self.predictions, torch.argmin(scores, dim=1)),0) 
-        return torch.argmin(scores, dim=1)
+            self.predictions = torch.cat((self.predictions, torch.argmax(scores, dim=1)),0) 
+        return torch.argmax(scores, dim=1)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=float(self.lr)) # can still add weight decay
@@ -133,7 +134,6 @@ class LitBasicNN(L.LightningModule):
         return optimizer
 
 def train_step(config_file, train_test_together = False):
-
     # Read in parameters
     main_config, dataset_config, network_config, training_config = read_config(
         config_file
@@ -166,6 +166,7 @@ def train_step(config_file, train_test_together = False):
         )
         n_classes = DataLoader.n_classes()
 
+        
     # Define network
     if network_config["model"] == "linear":
         network = LinearNetwork(
@@ -202,9 +203,10 @@ def train_step(config_file, train_test_together = False):
         dirpath=main_config["output_dir"],
         filename = main_config['name'] + '_val_loss'
     )
+    device_stats = DeviceStatsMonitor()
     lr_monitor = LearningRateMonitor(logging_interval='step')
     earlystopping = EarlyStopping(monitor="val_loss", mode="min")  # for cross-entropy
-    callbacks_list = [checkpoint_val, checkpoint_train, earlystopping, lr_monitor]
+    callbacks_list = [checkpoint_val, checkpoint_train, earlystopping, lr_monitor, device_stats]
 
     # Train and validate model
     if main_config["debug"] == "True":
@@ -218,8 +220,8 @@ def train_step(config_file, train_test_together = False):
         callbacks=callbacks_list,
         default_root_dir=main_config["output_dir"],
         enable_progress_bar=False,
-        #accelerator=training_config["accelerator"],
-        #devices = training_config['devices'],
+        accelerator=training_config["accelerator"],
+        devices = training_config['devices'],
     )
     trainer.fit(model, DataLoader)
     
@@ -255,6 +257,7 @@ def test_step(config_file, model):
         OOD_label_dataset = pd.read_csv(dataset_config["data_dir"] + 'OOD_ind_pancreas'+ '_dataset_' + main_config['name'] + '.csv', index_col = 0)
         OOD_label_celltype = pd.read_csv(dataset_config["data_dir"] + 'OOD_ind_pancreas'+ '_celltypes_' + main_config['name'] + '.csv', index_col = 0)
 
+        
     # load model
     if type(model) is str:
         os.chdir(main_config["output_dir"])
@@ -272,7 +275,8 @@ def test_step(config_file, model):
     pred_writer = CustomWriter(
         main_config
     )
-    callbacks_list = [checkpoint_test, pred_writer]
+    device_stats = DeviceStatsMonitor()
+    callbacks_list = [checkpoint_test, pred_writer, device_stats]
 
     # Trainer
     trainer = Trainer(
@@ -281,24 +285,35 @@ def test_step(config_file, model):
         callbacks=callbacks_list,
         default_root_dir=main_config["output_dir"],
         enable_progress_bar=False,
-        #accelerator=main_config["accelerator"],
+        accelerator=training_config["accelerator"],
+        devices=training_config["devices"],
     )
+    
     # Test
     if verbose == "True":
         print('Start testing')
     trainer.test(model, datamodule=dataset)
+
+    ## Make umaps
+    tech_test, data_test, labels_test = dataset.return_data_UMAP()
+    dataset.make_UMAP_manifold( data_test, labels_test, tech_test, main_config['name'] + '_anndata.h5ad' )
+    dataset.plot_UMAP('UMAP_Pancreas_techs.png')
+    dataset.plot_UMAP_colour(main_config['name'] + "_UMAP_Pancreas_OOD_dataset.png", OOD_label_dataset)
+    dataset.plot_UMAP_colour(main_config['name'] + "_UMAP_Pancreas_OOD_celltype.png", OOD_label_celltype)
 
     # predict
     if verbose == "True":
         print('Start predicting')
     trainer.predict(model, datamodule=dataset)
 
+   
     # Calculate statistics
     confidence = torch.max(model.scores,1).values
 
     results_dict = {}
     auroc_dataset, aupr_in_dataset, aupr_out_dataset, fpr_dataset = auc_and_fpr_recall(confidence.numpy(), OOD_label_dataset.iloc[:,0].values, 0.95)
-    results_dict['dataset'] = {"auroc":auroc_dataset, "aupr_in": aupr_in_dataset, "aupr_out": aupr_out_dataset, "fpr": fpr_dataset}
+    acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(model.scores, OOD_label_dataset.iloc[:,0].values, model.predictions, model.ytrue, verbose)
+    results_dict['dataset'] = {"auroc":auroc_dataset, "aupr_in": aupr_in_dataset, "aupr_out": aupr_out_dataset, "fpr": fpr_dataset, "acc_in": acc_ID, "acc_out": acc_OOD, "bacc_in": bacc_ID, "bacc_out": bacc_OOD}
     print(' \n')
     print('-------')
     print('Results')
@@ -311,7 +326,8 @@ def test_step(config_file, model):
     
     if not np.isnan(OOD_label_celltype.iloc[0,0]):
         auroc_celltype, aupr_in_celltype, aupr_out_celltype, fpr_celltype = auc_and_fpr_recall(confidence.numpy(), OOD_label_celltype.iloc[:,0].values, 0.95)
-        results_dict['celltype'] = {"auroc":auroc_celltype, "aupr_in": aupr_in_celltype, "aupr_out": aupr_out_celltype, "fpr": fpr_celltype}
+        acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(model.scores, OOD_label_celltype.iloc[:,0].values, model.predictions, model.ytrue, verbose)
+        results_dict['celltype'] = {"auroc":auroc_celltype, "aupr_in": aupr_in_celltype, "aupr_out": aupr_out_celltype, "fpr": fpr_celltype, "acc_in": acc_ID, "acc_out": acc_OOD, "bacc_in": bacc_ID, "bacc_out": bacc_OOD}
         print('-------')
         print("For the celltypes")
         print('auroc', auroc_celltype)
@@ -319,11 +335,15 @@ def test_step(config_file, model):
         print('aupr_out', aupr_out_celltype)
         print('fpr', fpr_celltype)
     else:
+        results_dict['celltype'] = None
         print('No OOD celltypes, so no celltype analysis')
-
+    max_elem, max_ind = torch.max(model.scores, dim=1)
+    R = Accuracy_reject_curves(max_elem, model.ytrue, model.predictions)
+    plot_AR_curves(R, main_config["output_dir"] + main_config['name'] + '_AR_plot.png')
+    R.to_csv(main_config["output_dir"] + main_config['name'] + '_AR.csv')
     print('\n')
     # save results
-    save_dict_to_json(results_dict, main_config['name'])
+    save_dict_to_json(results_dict,  main_config["output_dir"] + main_config['name'])
 
     return model.scores, model.ytrue, model.predictions
 
@@ -342,6 +362,14 @@ def default(obj):
 def save_dict_to_json(d_results, name_analysis):     
     with open(str(name_analysis) + "_results.json", "w") as f1:
             json.dump(d_results, f1, default = default)
+
+def save_numpy_array(obj, file_dir):
+    if torch.is_tensor(obj):
+        obj = obj.numpy()
+    
+    df = pd.DataFrame(obj)
+    df.to_csv(file_dir)
+
 
 #######################
 ### Actual analysis ###
@@ -367,11 +395,15 @@ if args.Run_step == "train":
 
 elif args.Run_step == "test":
     start = time.time()
-    print(main_config['output_dir'] + args.filename)
-    predictions = test_step(args.config_file, main_config['output_dir'] + args.filename)
+    scores, ytrue, predictions = test_step(args.config_file, main_config['output_dir'] + args.filename)
     end = time.time()
     if main_config['verbose'] == "True":
         print('Total OOD testing time', end - start)
+
+     # Saving
+    save_numpy_array(scores, main_config['output_dir'] + main_confing['name'] + '_scores.csv')
+    save_numpy_array(ytrue, main_config['output_dir'] + main_confing['name'] + '_ytrue.csv')
+    save_numpy_array(predictions, main_config['output_dir'] + main_confing['name'] + '_predictions.csv')
 
 elif args.Run_step == "all":
     # Training
@@ -387,5 +419,11 @@ elif args.Run_step == "all":
     end = time.time()
     if main_config['verbose'] == "True":    
         print('Total OOD testing time', end - start)
-    print('predictions', predictions.size())
+
+    # Saving
+    save_numpy_array(scores, main_config['output_dir'] + main_config['name'] + '_scores.csv')
+    save_numpy_array(ytrue, main_config['output_dir'] + main_config['name'] + '_ytrue.csv')
+    save_numpy_array(predictions, main_config['output_dir'] + main_config['name'] + '_predictions.csv')
+
+# to save tensorboard results: https://www.tensorflow.org/tensorboard/dataframe_api
 

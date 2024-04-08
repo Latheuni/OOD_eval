@@ -33,5 +33,6 @@ training:
   loss_function: "logitnorm"
   learning_rate: 1e-04
   max_epochs: 150
-  accelerator: "cpu"
+  cpus: 1
+  accelerator: "gpu"
   devices: 1
