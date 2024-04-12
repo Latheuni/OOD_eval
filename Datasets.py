@@ -158,18 +158,19 @@ class LitPancreasDataModule(L.LightningDataModule):
         ## indicator OOD celltypes
         OOD_ind = pd.DataFrame([-1  if i not in np.unique(labels_train) else 1 for i in labels_test_total ])
         OOD_celltypes = [i.numpy() for i in labels_test_total if i.numpy() not in np.unique(labels_train)]
+        OOD_celltypes_ind = [-1 if i.numpy() not in np.unique(labels_train) else 1 for i in labels_test_total]
         if OOD_celltypes == []:
             if self.verbose == "True":
                 print('No OOD celtypes')
-            OOD_celltypes = pd.DataFrame([None])
+            OOD_celltypes_ind = pd.DataFrame([None])
         else:
-            OOD_celltypes = pd.DataFrame(OOD_celltypes)
+            OOD_celltypes_ind = pd.DataFrame(OOD_celltypes_ind)
             if self.verbose == "True":
                 print('OOD celltypes', np.unique(OOD_celltypes))
                 print('percentage OOD celltypes', len(OOD_celltypes)/labels_test_total.size(dim=0))
 
         #if not os.path.exists(self.data_dir + 'OOD_ind_pancreas'+ '_celltypes_' + str(self.name) + '.csv'):
-        OOD_celltypes.to_csv(self.data_dir + 'OOD_ind_pancreas'+ '_celltypes_' + str(self.name) + '.csv')
+        OOD_celltypes_ind.to_csv(self.data_dir + 'OOD_ind_pancreas'+ '_celltypes_' + str(self.name) + '.csv')
         if self.verbose == "True":
             print('percentage OOD dataset', len(labels_OOD)/labels_test_total.size(dim=0))
             print('Size total test data', data_test_total.size())
@@ -216,6 +217,11 @@ class LitPancreasDataModule(L.LightningDataModule):
         )
         return len(np.unique(labels_filter.iloc[:,0]))
     
+    def n_features(self):
+        h5ad = sc.read_h5ad(self.data_dir + self.data_file)
+        data = sparse.csr_matrix(h5ad.X)
+        return data.shape[1]
+
     def make_UMAP_manifold(self, data, labels, techs, filename):
         # Read in data
         adata = ad.AnnData(data.numpy())
@@ -249,5 +255,6 @@ class LitPancreasDataModule(L.LightningDataModule):
             if self.verbose == "True":
                 print('UMAP already exists')
     
+
 
 

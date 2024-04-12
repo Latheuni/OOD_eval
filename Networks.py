@@ -50,15 +50,18 @@ class NonLinearNetwork(nn.Sequential):  # Deep Linear network
 
             if i != num_hidden_layers:
                 if activation == "elu":
-                    self.predictor.append(nn.Elu())
+                    self.predictor.append(nn.ELU())
                 elif activation == "relu":
                     self.predictor.append(nn.LeakyReLU())
+                elif activation == "gelu":
+                    self.predictor.append(nn.GELU())
             else:
-
                 if activation == "elu":
-                    self.predictor.append(nn.Elu())
+                    self.predictor.append(nn.ELU())
                 elif activation == "relu":
                     self.predictor.append(nn.LeakyReLU())
+                elif activation == "gelu":
+                    self.predictor.append(nn.GELU())
 
     def forward(self, x):
         for i, l in enumerate(self.predictor):

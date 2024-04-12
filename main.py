@@ -145,8 +145,8 @@ def train_step(config_file, train_test_together = False):
     # Set up directionary to save the results
     if verbose == "True":
         print("Set up direcionary and environment")
-    if not os.path.exists(main_config["output_dir"]):
-        os.mkdir(main_config["output_dir"])
+    if not os.path.exists(main_config["output_dir"] + main_config['name'] + '/'):
+        os.mkdir(main_config["output_dir"]+ main_config['name'] + '/')
 
     # Define the dataset
     if dataset_config["name"] == "Pancreas":
@@ -160,25 +160,26 @@ def train_step(config_file, train_test_together = False):
             dataset_config["test_size"],
             dataset_config["validation_size"],
             dataset_config["min_celltypes"],
-            main_config['cpus'],
+            training_config['cpus'],
             main_config['name'],
             main_config['verbose'],
         )
         n_classes = DataLoader.n_classes()
-
+        n_features = DataLoader.n_features()
+        print(n_features)
         
     # Define network
     if network_config["model"] == "linear":
         network = LinearNetwork(
-            network_config["input_dim"],
-            network_config["output_dim"],
+            n_features,
+            n_classes,
             network_config["nodes_per_layer"],
             network_config["num_hidden_layer"],
         )
     else:
         network = NonLinearNetwork(
-            network_config["input_dim"],
-            network_config["output_dim"],
+            n_features,
+            n_classes,
             network_config["nodes_per_layer"],
             network_config["num_hidden_layer"],
             network_config["activation"],
@@ -195,12 +196,12 @@ def train_step(config_file, train_test_together = False):
     # Define callbacks
     checkpoint_train = ModelCheckpoint(
         monitor="train_loss",
-        dirpath=main_config["output_dir"],
+        dirpath=main_config["output_dir"] + main_config['name'] + '/',
         filename = main_config['name'] + '_train_loss'
     )
     checkpoint_val = ModelCheckpoint(
         monitor="val_loss",
-        dirpath=main_config["output_dir"],
+        dirpath=main_config["output_dir"] + main_config['name'] + '/',
         filename = main_config['name'] + '_val_loss'
     )
     device_stats = DeviceStatsMonitor()
@@ -218,7 +219,7 @@ def train_step(config_file, train_test_together = False):
         max_epochs=training_config["max_epochs"],
         logger=Logger,
         callbacks=callbacks_list,
-        default_root_dir=main_config["output_dir"],
+        default_root_dir=main_config["output_dir"] + main_config['name'] + '/',
         enable_progress_bar=False,
         accelerator=training_config["accelerator"],
         devices = training_config['devices'],
@@ -250,7 +251,7 @@ def test_step(config_file, model):
             dataset_config["test_size"],
             dataset_config["validation_size"],
             dataset_config["min_celltypes"],
-            main_config['cpus'],
+            training_config['cpus'],
             main_config['name'],
             main_config['verbose'],
         )
@@ -260,7 +261,7 @@ def test_step(config_file, model):
         
     # load model
     if type(model) is str:
-        os.chdir(main_config["output_dir"])
+        os.chdir(main_config["output_dir"] + main_config['name'] + '/')
         model = LitBasicNN.load_from_checkpoint(filename)
 
     # Logger
@@ -269,7 +270,7 @@ def test_step(config_file, model):
     # Define callbacks
     checkpoint_test = ModelCheckpoint(
         monitor="test_loss",
-        dirpath=main_config["output_dir"],
+        dirpath=main_config["output_dir"] + main_config['name'] + '/',
         filename = main_config['name'] + '_test_loss_' + "{epoch}"
     )
     pred_writer = CustomWriter(
@@ -283,7 +284,7 @@ def test_step(config_file, model):
         max_epochs=training_config["max_epochs"],
         logger=Logger,
         callbacks=callbacks_list,
-        default_root_dir=main_config["output_dir"],
+        default_root_dir=main_config["output_dir"] + main_config['name'] + '/',
         enable_progress_bar=False,
         accelerator=training_config["accelerator"],
         devices=training_config["devices"],
@@ -293,14 +294,7 @@ def test_step(config_file, model):
     if verbose == "True":
         print('Start testing')
     trainer.test(model, datamodule=dataset)
-
-    ## Make umaps
-    tech_test, data_test, labels_test = dataset.return_data_UMAP()
-    dataset.make_UMAP_manifold( data_test, labels_test, tech_test, main_config['name'] + '_anndata.h5ad' )
-    dataset.plot_UMAP('UMAP_Pancreas_techs.png')
-    dataset.plot_UMAP_colour(main_config['name'] + "_UMAP_Pancreas_OOD_dataset.png", OOD_label_dataset)
-    dataset.plot_UMAP_colour(main_config['name'] + "_UMAP_Pancreas_OOD_celltype.png", OOD_label_celltype)
-
+    
     # predict
     if verbose == "True":
         print('Start predicting')
@@ -311,8 +305,8 @@ def test_step(config_file, model):
     confidence = torch.max(model.scores,1).values
 
     results_dict = {}
-    auroc_dataset, aupr_in_dataset, aupr_out_dataset, fpr_dataset = auc_and_fpr_recall(confidence.numpy(), OOD_label_dataset.iloc[:,0].values, 0.95)
-    acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(model.scores, OOD_label_dataset.iloc[:,0].values, model.predictions, model.ytrue, verbose)
+    auroc_dataset, aupr_in_dataset, aupr_out_dataset, fpr_dataset = auc_and_fpr_recall(confidence.cpu().numpy(), OOD_label_dataset.iloc[:,0], 0.95)
+    acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(model.scores.cpu().numpy(), OOD_label_dataset.iloc[:,0].values, model.predictions.cpu().numpy(), model.ytrue.cpu().numpy(), verbose)
     results_dict['dataset'] = {"auroc":auroc_dataset, "aupr_in": aupr_in_dataset, "aupr_out": aupr_out_dataset, "fpr": fpr_dataset, "acc_in": acc_ID, "acc_out": acc_OOD, "bacc_in": bacc_ID, "bacc_out": bacc_OOD}
     print(' \n')
     print('-------')
@@ -325,8 +319,8 @@ def test_step(config_file, model):
     print('fpr', fpr_dataset)
     
     if not np.isnan(OOD_label_celltype.iloc[0,0]):
-        auroc_celltype, aupr_in_celltype, aupr_out_celltype, fpr_celltype = auc_and_fpr_recall(confidence.numpy(), OOD_label_celltype.iloc[:,0].values, 0.95)
-        acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(model.scores, OOD_label_celltype.iloc[:,0].values, model.predictions, model.ytrue, verbose)
+        auroc_celltype, aupr_in_celltype, aupr_out_celltype, fpr_celltype = auc_and_fpr_recall(confidence.cpu().numpy(), OOD_label_celltype.iloc[:,0].values, 0.95)
+        acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(model.scores.cpu().numpy(), OOD_label_celltype.iloc[:,0].values, model.predictions.cpu().numpy(), model.ytrue.cpu().numpy(), verbose)
         results_dict['celltype'] = {"auroc":auroc_celltype, "aupr_in": aupr_in_celltype, "aupr_out": aupr_out_celltype, "fpr": fpr_celltype, "acc_in": acc_ID, "acc_out": acc_OOD, "bacc_in": bacc_ID, "bacc_out": bacc_OOD}
         print('-------')
         print("For the celltypes")
@@ -337,15 +331,15 @@ def test_step(config_file, model):
     else:
         results_dict['celltype'] = None
         print('No OOD celltypes, so no celltype analysis')
-    max_elem, max_ind = torch.max(model.scores, dim=1)
-    R = Accuracy_reject_curves(max_elem, model.ytrue, model.predictions)
-    plot_AR_curves(R, main_config["output_dir"] + main_config['name'] + '_AR_plot.png')
-    R.to_csv(main_config["output_dir"] + main_config['name'] + '_AR.csv')
+    max_elem, max_ind = torch.max(model.scores.cpu(), dim=1)
+    R = Accuracy_reject_curves(max_elem, model.ytrue.cpu().numpy(), model.predictions.cpu().numpy())
+    plot_AR_curves(R, main_config["output_dir"] +  main_config['name'] + '/' + main_config['name'] + '_AR_plot.png')
+    R.to_csv(main_config["output_dir"] + main_config['name'] + '/' + main_config['name'] + '_AR.csv')
     print('\n')
     # save results
-    save_dict_to_json(results_dict,  main_config["output_dir"] + main_config['name'])
+    save_dict_to_json(results_dict,  main_config["output_dir"] + main_config['name'] + '/'+  main_config['name'])
 
-    return model.scores, model.ytrue, model.predictions
+    return model.scores.cpu().numpy(), model.ytrue.cpu().numpy(), model.predictions.cpu().numpy()
 
 import json
 def default(obj):
@@ -421,9 +415,9 @@ elif args.Run_step == "all":
         print('Total OOD testing time', end - start)
 
     # Saving
-    save_numpy_array(scores, main_config['output_dir'] + main_config['name'] + '_scores.csv')
-    save_numpy_array(ytrue, main_config['output_dir'] + main_config['name'] + '_ytrue.csv')
-    save_numpy_array(predictions, main_config['output_dir'] + main_config['name'] + '_predictions.csv')
+    save_numpy_array(scores, main_config['output_dir'] + main_config['name'] + '/' + main_config['name'] + '_scores.csv')
+    save_numpy_array(ytrue, main_config['output_dir'] + main_config['name'] + '/'+ main_config['name'] + '_ytrue.csv')
+    save_numpy_array(predictions, main_config['output_dir'] + main_config['name'] + '/'+ main_config['name'] + '_predictions.csv')
 
 # to save tensorboard results: https://www.tensorflow.org/tensorboard/dataframe_api
 
