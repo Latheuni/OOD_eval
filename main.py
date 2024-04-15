@@ -21,7 +21,7 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     DeviceStatsMonitor
 )
-from torcheval.metrics import MulticlassAccuracy
+from torchmetrics.classification import Accuracy #MultiClassAccuracy in newer versions of lightning (here 0.9.3)
 from pytorch_lightning.loggers import TensorBoardLogger
 from Metrics import *
 ## Own imports
@@ -69,8 +69,12 @@ class LitBasicNN(L.LightningModule):
         self.loss_function = loss_function
         self.lr = learning_rate
         self.decay = decay
-        self.accuracy = MulticlassAccuracy(num_classes=n_classes, average="micro") # is not callable
-        self.balanced_accuracy = MulticlassAccuracy(
+        self.val_accuracy =Accuracy(num_classes=n_classes, average="micro") # is not callable
+        self.test_accuracy = Accuracy(num_classes=n_classes, average="micro") # is not callable
+        self.val_balanced_accuracy = Accuracy(
+            num_classes=n_classes, average="macro"
+        )
+        self.test_balanced_accuracy =Accuracy(
             num_classes=n_classes, average="macro"
         )
         self.save_hyperparameters()
@@ -83,10 +87,6 @@ class LitBasicNN(L.LightningModule):
         self.log(
             "train_loss", loss
         )  # on_epoch acculumate and rduces all metric to the end of the epoch, on_step that specific call will not accumulate metrics
-        self.accuracy.update(scores, y)
-        self.balanced_accuracy.update(scores, y)
-        self.log("training accuracy", self.accuracy.compute())
-        self.log("training balanced accuracy", self.balanced_accuracy.compute())
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -94,20 +94,20 @@ class LitBasicNN(L.LightningModule):
         scores = self.NN(x)
         val_loss = self.loss_function(scores, y)
         self.log("val_loss", val_loss)
-        self.accuracy.update(scores, y)
-        self.balanced_accuracy.update(scores, y)
-        self.log("validation accuracy", self.accuracy.compute())
-        self.log("validation balanced accuracy", self.balanced_accuracy.compute())
+        self.val_accuracy(scores, y)
+        self.val_balanced_accuracy(scores, y)
+        self.log("validation accuracy", self.val_accuracy)
+        self.log("validation balanced accuracy", self.val_balanced_accuracy)
 
     def test_step(self, batch, batch_idx):
         x, y = batch
         scores = self.NN(x)
         test_loss = self.loss_function(scores, y)
         self.log("test_loss", test_loss)
-        self.accuracy.update(scores, y)
-        self.balanced_accuracy.update(scores, y)
-        self.log("accuracy", self.accuracy.compute())
-        self.log("balanced accuracy", self.balanced_accuracy.compute())  
+        self.test_accuracy(scores, y)
+        self.test_balanced_accuracy(scores, y)
+        self.log("accuracy", self.test_accuracy)
+        self.log("balanced accuracy", self.test_balanced_accuracy)  
         if batch_idx == 0:
             self.ytrue = y
             self.scores = scores
@@ -132,7 +132,7 @@ class LitBasicNN(L.LightningModule):
             optimizer, lr_lambda=lambd
         )
         return optimizer
-
+    
 def train_step(config_file, train_test_together = False):
     # Read in parameters
     main_config, dataset_config, network_config, training_config = read_config(
