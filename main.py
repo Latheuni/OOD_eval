@@ -10,7 +10,7 @@ import argparse
 import datetime
 from torch import nn
 import pytorch_lightning as L
-
+from torch.nn.functional import softmax
 from pytorch_lightning.cli import LightningCLI
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
@@ -115,10 +115,11 @@ class LitBasicNN(L.LightningModule):
         self.log("balanced accuracy", self.balanced_accuracy)
         if batch_idx == 0:
             self.ytrue = y
-            self.scores = scores
+            self.scores = softmax(scores, -1)
         else:
             self.ytrue = torch.cat((self.ytrue, y), 0)
-            self.scores = torch.cat((self.scores, scores), 0)
+            s = softmax(scores, -1)
+            self.scores = torch.cat((self.scores, s), 0)
         return scores, y
 
     def predict_step(
