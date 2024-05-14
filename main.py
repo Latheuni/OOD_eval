@@ -300,7 +300,7 @@ def test_step(config_file, model):
     # load model
     if type(model) is str:
         os.chdir(main_config["output_dir"] + main_config["name"] + "/")
-        model = LitBasicNN.load_from_checkpoint(filename)
+        model = LitBasicNN.load_from_checkpoint(model)
 
     # Logger
     Logger = TensorBoardLogger(
@@ -498,14 +498,14 @@ elif args.Run_step == "test":
 
     # Saving
     save_numpy_array(
-        scores, main_config["output_dir"] + main_confing["name"] + "_scores.csv"
+        scores, main_config["output_dir"] + main_config["name"] + "_scores.csv"
     )
     save_numpy_array(
-        ytrue, main_config["output_dir"] + main_confing["name"] + "_ytrue.csv"
+        ytrue, main_config["output_dir"] + main_config["name"] + "_ytrue.csv"
     )
     save_numpy_array(
         predictions,
-        main_config["output_dir"] + main_confing["name"] + "_predictions.csv",
+        main_config["output_dir"] + main_config["name"] + "_predictions.csv",
     )
 
 elif args.Run_step == "all":
