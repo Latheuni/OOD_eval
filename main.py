@@ -1,19 +1,15 @@
 ## packages
+
 import os
 import time
 import numpy as np
 import pandas as pd
-
-# import wandb
-import torch
 import argparse
 import datetime
-from torch import nn
+
 import pytorch_lightning as L
-from torch.nn.functional import softmax
-from pytorch_lightning.cli import LightningCLI
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import WandbLogger
+from torch.nn.functional import softmax
 from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
@@ -21,23 +17,34 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     DeviceStatsMonitor,
 )
-from torchmetrics.classification import (
-    MulticlassAccuracy,
-)  # Depends on lightning version, Accuracy for 0.9.3
+from pytorch_lightning.cli import LightningCLI
+from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.loggers import TensorBoardLogger
-from Metrics import *
+from pytorch_lightning.callbacks import BasePredictionWriter
+import torch
+from torch import nn
+
+print("Pytorch Lighntning version used is", L.__version__)
+if L.__version__ > "0.9.3":
+    from torchmetrics.classification import (
+        MulticlassAccuracy,
+    )
+else:
+    from torchmetrics.classification import (
+        Accuracy,
+    )
 
 ## Own imports
 from utils import read_config
 from Datasets import LitPancreasDataModule
 from Networks import LinearNetwork, NonLinearNetwork
 from Trainers import LitBasicNN
-from Losses import LogitNormLoss
+from Losses import *
+from Metrics import *
+
 
 # Code
 ## basic module
-import torch
-from pytorch_lightning.callbacks import BasePredictionWriter
 
 
 # Writes predictions in .pt format
@@ -73,12 +80,39 @@ class LitBasicNN(L.LightningModule):
         self.loss_function = loss_function
         self.lr = learning_rate
         self.decay = decay
-        self.accuracy = MulticlassAccuracy(
-            num_classes=n_classes, average="micro"
-        )  # is not callable
-        self.balanced_accuracy = MulticlassAccuracy(
-            num_classes=n_classes, average="macro"
-        )
+
+        if L.__version__ > "0.9.3":
+            self.accuracy = MulticlassAccuracy(
+                num_classes=n_classes, average="micro"
+            )  # is not callable
+            self.balanced_accuracy = MulticlassAccuracy(
+                num_classes=n_classes, average="macro"
+            )
+            self.train_accuracy = MulticlassAccuracy(
+                num_classes=n_classes, average="micro"
+            )
+            self.val_accuracy = MulticlassAccuracy(
+                num_classes=n_classes, average="micro"
+            )
+            self.test_accuracy = MulticlassAccuracy(
+                num_classes=n_classes, average="micro"
+            )
+            self.val_balanced_accuracy = MulticlassAccuracy(
+                num_classes=n_classes, average="macro"
+            )
+            self.test_balanced_accuracy = MulticlassAccuracy(
+                num_classes=n_classes, average="macro"
+            )
+        else:
+            self.train_accuracy = Accuracy(num_classes=n_classes, average="micro")
+            self.val_accuracy = Accuracy(num_classes=n_classes, average="micro")
+            self.test_accuracy = Accuracy(num_classes=n_classes, average="micro")
+            self.val_balanced_accuracy = Accuracy(
+                num_classes=n_classes, average="macro"
+            )
+            self.test_balanced_accuracy = Accuracy(
+                num_classes=n_classes, average="macro"
+            )
         self.save_hyperparameters()
 
     def training_step(self, batch, batch_idx):
@@ -86,40 +120,41 @@ class LitBasicNN(L.LightningModule):
         scores = self.NN(x)
         loss = self.loss_function(scores, y)
         self.log(
-            "train_loss", loss
+            "train_loss", loss, on_step=True
         )  # on_epoch acculumate and rduces all metric to the end of the epoch, on_step that specific call will not accumulate metrics
-        self.accuracy(scores, y)
-        self.balanced_accuracy(scores, y)
-        self.log("training accuracy", self.accuracy)
-        self.log("training balanced accuracy", self.balanced_accuracy)
+        self.train_accuracy(scores, y)
+        self.log("training accuracy", self.train_accuracy, on_step=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         scores = self.NN(x)
         val_loss = self.loss_function(scores, y)
-        self.log("val_loss", val_loss)
-        self.accuracy(scores, y)
-        self.balanced_accuracy(scores, y)
-        self.log("validation accuracy", self.accuracy)
-        self.log("validation balanced accuracy", self.balanced_accuracy)
+        scores = F.softmax(scores, dim=-1)
+        self.log("val_loss", val_loss, on_step=True)
+        self.val_accuracy(scores, y)
+        self.val_balanced_accuracy(scores, y)
+        self.log("validation accuracy", self.val_accuracy, on_step=True)
+        self.log(
+            "validation balanced accuracy", self.val_balanced_accuracy, on_step=True
+        )
 
     def test_step(self, batch, batch_idx):
         x, y = batch
         scores = self.NN(x)
         test_loss = self.loss_function(scores, y)
-        self.log("test_loss", test_loss)
-        self.accuracy(scores, y)
-        self.balanced_accuracy(scores, y)
-        self.log("accuracy", self.accuracy)
-        self.log("balanced accuracy", self.balanced_accuracy)
+        scores = F.softmax(scores, dim=-1)
+        self.log("test_loss", test_loss, on_step=True)
+        self.test_accuracy(scores, y)
+        self.test_balanced_accuracy(scores, y)
+        self.log("test accuracy", self.test_accuracy, on_step=True)
+        self.log("test balanced accuracy", self.test_balanced_accuracy, on_step=True)
         if batch_idx == 0:
             self.ytrue = y
-            self.scores = softmax(scores, 1)  # Unsure if this is correct: check!
+            self.scores = scores  # Unsure if this is correct: check!
         else:
             self.ytrue = torch.cat((self.ytrue, y), 0)
-            s = softmax(scores, 1)
-            self.scores = torch.cat((self.scores, s), 0)
+            self.scores = torch.cat((self.scores, scores), 0)
         return scores, y
 
     def predict_step(
