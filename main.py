@@ -162,6 +162,7 @@ class LitBasicNN(L.LightningModule):
     ):  # Loss needs to be minimized, max scores are correct label
         x, y = batch
         scores = self.NN(x)
+        scores = F.softmax(scores, dim=-1)
         if batch_idx == 0:
             self.predictions = torch.argmax(scores, dim=1)
         else:
@@ -189,6 +190,8 @@ def train_step(config_file, train_test_together=False):
     verbose = main_config["verbose"]
     if training_config["loss_function"] == "logitnorm":
         loss_function = LogitNormLoss()
+    elif training_config["loss_function"] in ["cross-entropy", "cross entropy"]:
+        loss_function = CrossEntropyLoss()
 
     # Set up directionary to save the results
     if verbose == "True":
@@ -214,7 +217,6 @@ def train_step(config_file, train_test_together=False):
         )
         n_classes = DataLoader.n_classes()
         n_features = DataLoader.n_features()
-        print(n_features)
 
     # Define network
     if network_config["model"] == "linear":
