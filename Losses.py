@@ -16,9 +16,9 @@ class LogitNormLoss(nn.Module):
         return F.cross_entropy(logit_norm, target)  # Should be in the NN losses
 
 
-class CrossEntropy(nn.Module):
+class CrossEntropyLoss(nn.Module):
     def __init__(self):
-        super(CrossEntropy, self).__init__()
+        super(CrossEntropyLoss, self).__init__()
 
     def forward(self, x, target):
         return F.cross_entropy(x, target)
