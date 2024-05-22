@@ -115,10 +115,10 @@ class LitBasicNN(L.LightningModule):
         self.log("balanced accuracy", self.balanced_accuracy)
         if batch_idx == 0:
             self.ytrue = y
-            self.scores = softmax(scores, -1)
+            self.scores = softmax(scores, 1)  # Unsure if this is correct: check!
         else:
             self.ytrue = torch.cat((self.ytrue, y), 0)
-            s = softmax(scores, -1)
+            s = softmax(scores, 1)
             self.scores = torch.cat((self.scores, s), 0)
         return scores, y
 
