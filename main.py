@@ -17,7 +17,9 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     DeviceStatsMonitor,
 )
-from torchmetrics.classification import Accuracy #MultiClassAccuracy in newer versions of lightning (here 0.9.3)
+from torchmetrics.classification import (
+    Accuracy,
+)  # MultiClassAccuracy in newer versions of lightning (here 0.9.3)
 from pytorch_lightning.cli import LightningCLI
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -120,7 +122,7 @@ class LitBasicNN(L.LightningModule):
         x, y = batch
         scores = self.NN(x)
         loss = self.loss_function(scores, y)
-        scores = F.softmax(scores, dim = -1)
+        scores = F.softmax(scores, dim=-1)
         self.log(
             "train_loss", loss, on_step=True
         )  # on_epoch acculumate and rduces all metric to the end of the epoch, on_step that specific call will not accumulate metrics
@@ -182,8 +184,6 @@ class LitBasicNN(L.LightningModule):
             optimizer, lr_lambda=lambd
         )
         return optimizer
-    
-def train_step(config_file, train_test_together = False):
 
 
 def train_step(config_file, train_test_together=False):
