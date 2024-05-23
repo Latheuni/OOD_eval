@@ -22,11 +22,11 @@ def general_metrics(conf, OOD_ind, predictions, ytrue, verbose):
             print('Converted OOD_ind', OOD_ind)
 
     OOD_pred = pd.DataFrame(predictions).iloc[convert_ind(OOD_ind),:]
-    ID_pred = pd.DataFrame(predictions).iloc[convert_ind( OOD_ind),:]
+    ID_pred = pd.DataFrame(predictions).iloc[~convert_ind( OOD_ind),:]
     OOD_conf = pd.DataFrame(conf).iloc[convert_ind(OOD_ind),:]
-    ID_conf = pd.DataFrame(conf).iloc[convert_ind( OOD_ind),:]
+    ID_conf = pd.DataFrame(conf).iloc[~convert_ind( OOD_ind),:]
     OOD_ytrue = pd.DataFrame(ytrue).iloc[convert_ind(OOD_ind),:]
-    ID_ytrue = pd.DataFrame(ytrue).iloc[convert_ind( OOD_ind),:]
+    ID_ytrue = pd.DataFrame(ytrue).iloc[~convert_ind( OOD_ind),:]
 
     return metrics.accuracy_score(OOD_ytrue, OOD_pred),metrics.accuracy_score(ID_ytrue, ID_pred), metrics.balanced_accuracy_score(OOD_ytrue, OOD_pred), metrics.balanced_accuracy_score(ID_ytrue, ID_pred)
 
