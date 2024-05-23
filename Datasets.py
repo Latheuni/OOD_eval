@@ -37,6 +37,280 @@ class BaseDataset(Dataset):  # Input for the LightningDataModule
 
 
 ## DataModules
+class LitLungDataModule(L.LightningDataModule):
+    def __init__(
+        self,
+        data_dir,
+        data_file,
+        label_conversion_file,
+        scenario,
+        batch_size,
+        val_size,
+        test_size,
+        num_workers,
+        name,
+        min_celltypes=10,
+        verbose="True",
+    ):
+        """Lightning DataModule for the immune dataset
+
+        Parameters
+        ----------
+        data_dir : str
+            path to data directory
+        data_file : str
+            filename of h5ad datafile
+        label_conversion_file : str
+            filename and dir where conversion dictionary of labels is saved
+        scenario : str
+            train/test split scenario
+            options: patient_1, patient_2, patient_3, patient_4, patient_5, patient_6, protocol, tissue
+        batch_size : int
+        val_size : float
+            fraction of training data used for validation
+        num_workers : int
+            number of available cpu cores
+        name : _str
+            name of the analysis
+        min_celltypes : int
+            minimum amount of observations that need to be present to prevent filtering for every cell type
+        verbose : str, optional
+            by default "True"
+        """
+        super().__init__()
+        self.data_dir = data_dir
+        self.data_file = data_file
+        self.verbose = verbose
+        self.scenario = scenario
+        self.val_size = val_size
+        self.min_celltypes = min_celltypes
+        self.name = name
+        self.batch_size = batch_size
+        self.cpus = num_workers
+        with open(label_conversion_file) as json_file:
+            self.conversion_dict = json.load(json_file)
+
+    def filter_counts_h5ad(self, data, labels, n):
+        """Filter celltypes with less than 10 instances
+        Parameters
+        ----------
+        data : annData
+        labels : Series
+        n : int
+            celltypes with less than n occurences will be filtered out
+        """
+        s = labels["celltype"].value_counts() < n
+        celltype_to_filter = s.index[s].to_list()
+        idx_keep = [l not in celltype_to_filter for l in labels.iloc[:, 0]]
+
+        return (data[idx_keep, :], labels.iloc[idx_keep, :])
+
+    def prepare_data(self):
+        """Read in the Data"""
+        h5ad = sc.read_h5ad(self.data_dir + self.data_file)
+        self.data = sparse.csr_matrix(h5ad.X)
+        self.obs = h5ad.obs
+
+    def pick_scenario(self):
+        if self.scenario.startswith("patient"):
+            # Scenario: split acros patients of the 10X_Transplant data (test one one patient, train on the other 5)
+            obs_patient = self.obs.iloc[self.obs["dataset"].values == "10x_Transplant",]
+            data_patient = self.data.iloc[
+                self.obs["dataset"].values == "10x_Transplant",
+            ]
+
+            data_patient_filter, obs_patient_filter = self.filter_counts_h5ad(
+                data_patient, obs_patient, self.min_celltypes
+            )
+
+            if not hasattr(self, "patients_ID"):
+                self.patients_ID = np.unique(obs_patient["batch"])
+
+            current_sc = int(self.scenario.split("_")[1])
+
+            X_test = data_patient_filter.iloc[
+                obs_patient_filter["batch"].values == self.patients_ID[current_sc]
+            ]
+            y_test = obs_patient_filter.iloc[
+                obs_patient_filter["batch"].values == self.patients_ID[current_sc]
+            ]["cell_type"]
+
+            X_train_val = data_patient_filter.iloc[
+                obs_patient_filter["batch"].values != self.patients_ID[current_sc]
+            ]
+            y_train_val = obs_patient_filter.iloc[
+                obs_patient_filter["batch"].values != self.patients_ID[current_sc]
+            ]["cell_type"]
+
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_train_val,
+                y_train_val,
+                test_size=self.val_size,
+                stratify=y_train_val.iloc[:, 0],
+                random_state=0,
+            )
+
+            return X_train, X_val, X_test, y_train, y_val, y_test
+
+        elif self.scenario.startswith("protocol"):
+            # Scenario: Train/Val data is Sun study, Test data is Villani study
+            obs_train_val = self.obs.iloc[
+                self.obs["dataset"].values == "10x_Transplant",
+            ]
+            data_train_val = self.data.iloc[
+                self.obs["dataset"].values == "10x_Transplant",
+            ]
+            data_filter_train_val, obs_filter_train_val = self.filter_counts_h5ad(
+                data_train_val, obs_train_val, self.min_celltypes
+            )
+
+            X_train, X_val, y_train, y_train_val = train_test_split(
+                data_filter_train_val,
+                obs_filter_train_val["cell_type"],
+                test_size=self.val_size,
+                stratify=obs_filter_train_val["cell_type"].iloc[:, 0],
+                random_state=0,
+            )
+
+            obs_test = self.obs.iloc[
+                self.obs["dataset"].values == "Dropseq_transplant",
+            ]
+            data_test = self.data.iloc[
+                self.obs["dataset"].values == "Dropseq_transplant",
+            ]
+            X_test, y_test = self.filter_counts_h5ad(
+                data_test, obs_test["cell_type"], self.min_celltypes
+            )
+
+            return X_train, X_val, X_test, y_train, y_val, y_test
+
+        elif self.scenario.startswith("tissue"):
+            # Scenario=:Train/Val data is Sun study, Test data is Oetjen study
+            obs_train_val = self.obs.iloc[
+                self.obs["dataset"].values == "10x_Transplant",
+            ]
+            data_train_val = self.data.iloc[
+                self.obs["dataset"].values == "10x_Transplant",
+            ]
+            data_filter_train_val, obs_filter_train_val = self.filter_counts_h5ad(
+                data_train_val, obs_train_val, self.min_celltypes
+            )
+
+            X_train, X_val, y_train, y_train_val = train_test_split(
+                data_filter_train_val,
+                obs_filter_train_val["cell_type"],
+                test_size=self.val_size,
+                stratify=obs_filter_train_val["cell_type"].iloc[:, 0],
+                random_state=0,
+            )
+
+            # Test data is Oetjen study(Bone_marrow)
+            obs_test = self.obs.iloc[self.obs["dataset"].values == "10x_Biopsy",]
+            data_test = self.data.iloc[self.obs["dataset"].values == "10x_Biopsy",]
+            X_test, y_test = self.filter_counts_h5ad(
+                data_test, obs_test["cell_type"], self.min_celltypes
+            )
+
+            return X_train, X_val, X_test, y_train, y_val, y_test
+
+    def check_for_OOD(self, y_train, y_test):
+        """Check if OOD labels are present in train/test split
+
+        Parameters
+        ----------
+        y_train
+        y_test
+
+        Returns
+        -------
+        ind: boolean
+            Are there OOD labels?
+        idx_OOD: list
+            boolean list: TRUE/FALSE this label is OOD
+        """
+        un_test = np.unique(y_test)
+        un_train = np.unique(y_train)
+
+        if sum([t not in un_train for t in un_test]) > 0:
+            ind = True
+            idx_OOD = [t not in un_train for t in y_test]
+        else:
+            ind = False
+            idx_OOD = None
+
+        return ind, idx_OOD
+
+    def setup(self):
+        """General Data setup"""
+        # Data setup train
+        if self.verbose == "True":
+            print("\n")
+            print("--- Data characteristics ---")
+            print("Total size data", self.data.shape)
+
+        X_train, X_val, X_test, y_train, y_val, y_test = self.pick_scenario()
+
+        # Convert str labels to int
+        labels_train = [self.conversion_dict[i] for i in y_train.iloc[:, 0]]
+        labels_val = [self.conversion_dict[i] for i in y_val.iloc[:, 0]]
+        labels_test = [self.conversion_dict[i] for i in y_test.iloc[:, 0]]
+
+        if self.verbose == "True":
+            print("Cell type classes", np.unique(labels_train))
+            print("Size training data", X_train.shape)
+            print("Size validation data", X_val.shape)
+            print("Size test data", X_test.shape)
+
+        self.data_test = BaseDataset(
+            torch.from_numpy(X_test.to_dense()),
+            torch.from_numpy(np.array(labels_test)),
+        )
+
+        self.data_train = BaseDataset(
+            torch.from_numpy(X_train.to_dense()),
+            torch.from_numpy(np.array(labels_train)),
+        )
+
+        self.data_val = BaseDataset(
+            torch.from_numpy(X_val.to_dense()),
+            torch.from_numpy(np.array(labels_val)),
+        )
+
+        OOD_idx, OOD_ind = self.check_for_OOD(y_train, y_test)
+        if self.verbose == "True":
+            print("OOD_data?", OOD_idx)
+            print("Size OOD data?", sum(OOD_ind))
+            print("Percentage OOD", sum(OOD_ind) / len(y_test))
+            print("/n")
+
+        if not os.path.exists(
+            self.data_dir + "OOD_ind_pancreas" + "_dataset_" + str(self.name) + ".csv"
+        ):
+            OOD_ind.to_csv(
+                self.data_dir
+                + "OOD_ind_pancreas"
+                + "_dataset_"
+                + str(self.name)
+                + ".csv"
+            )
+
+    def train_dataloader(self):
+        return DataLoader(self.data_train, batch_size=self.batch, num_workers=self.cpus)
+
+    def val_dataloader(self):
+        return DataLoader(self.data_val, batch_size=self.batch, num_workers=self.cpus)
+
+    def test_dataloader(self):
+        test_loader = DataLoader(
+            self.data_test, batch_size=self.batch, num_workers=self.cpus
+        )
+        return [test_loader]
+
+    def predict_dataloader(self):
+        predict_loader = DataLoader(
+            self.data_test, batch_size=self.batch, num_workers=self.cpus
+        )
+        return [predict_loader]
 
 
 class LitImmuneDataModule(L.LightningDataModule):
@@ -67,7 +341,7 @@ class LitImmuneDataModule(L.LightningDataModule):
             filename and dir where conversion dictionary of labels is saved
         scenario : str
             train/test split scenario
-            options: intra_1, intra_2, intra_3, intra_4, patient_1, patient_2, patient_3, patient_4, protocol
+            options: intra_1, intra_2, intra_3, intra_4, patient_1, patient_2, patient_3, patient_4, protocol, tissue
         batch_size : int
         val_size : float
             fraction of training data used for validation
@@ -195,8 +469,8 @@ class LitImmuneDataModule(L.LightningDataModule):
             X_train, X_val, y_train, y_train_val = train_test_split(
                 X_train_val,
                 y_train_val,
-                test_size=self.val_size / (self.val_size + self.train_size),
-                stratify=y_val_test.iloc[:, 0],
+                test_size=self.val_size,
+                stratify=y_train_val.iloc[:, 0],
                 random_state=0,
             )
 
@@ -213,8 +487,8 @@ class LitImmuneDataModule(L.LightningDataModule):
             X_train, X_val, y_train, y_train_val = train_test_split(
                 data_filter_train_val,
                 obs_filter_train_val["final_annotation"],
-                test_size=self.val_size / (self.val_size + self.train_size),
-                stratify=y_val_test.iloc[:, 0],
+                test_size=self.val_size,
+                stratify=obs_filter_train_val["final_annotation"].iloc[:, 0],
                 random_state=0,
             )
 
@@ -237,8 +511,8 @@ class LitImmuneDataModule(L.LightningDataModule):
             X_train, X_val, y_train, y_train_val = train_test_split(
                 data_filter_train_val,
                 obs_filter_train_val["final_annotation"],
-                test_size=self.val_size / (self.val_size + self.train_size),
-                stratify=y_val_test.iloc[:, 0],
+                test_size=self.val_size,
+                stratify=obs_filter_train_val["final_annotation"].iloc[:, 0],
                 random_state=0,
             )
 
@@ -314,7 +588,6 @@ class LitImmuneDataModule(L.LightningDataModule):
             torch.from_numpy(np.array(labels_val)),
         )
 
-        # TODO Add verbose information statements
         OOD_idx, OOD_ind = self.check_for_OOD(y_train, y_test)
         if self.verbose == "True":
             print("OOD_data?", OOD_idx)
