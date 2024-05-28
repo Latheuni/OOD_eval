@@ -30,7 +30,7 @@ def general_metrics(conf, OOD_ind, predictions, ytrue, verbose):
 
     return metrics.accuracy_score(OOD_ytrue, OOD_pred),metrics.accuracy_score(ID_ytrue, ID_pred), metrics.balanced_accuracy_score(OOD_ytrue, OOD_pred), metrics.balanced_accuracy_score(ID_ytrue, ID_pred)
 
-def Accuracy_reject_curves(conf_scores, ytrue, predictions):
+def accuracy_reject_curves(conf_scores, ytrue, predictions):
     """
     Calculate AR curves (<= threshold is rejected)
     """
