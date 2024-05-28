@@ -37,7 +37,7 @@ class BaseDataset(Dataset):  # Input for the LightningDataModule
 
 
 ## DataModules
-# NOTE: for the Lung and Immune dataset, the entire test set is OOD, this is not the case for the Pancreas dataset. # TODO follow-up
+# NOTE: for all the test datasets generated there is ID data so that the calculation of the metrics becomes possible
 class LitLungDataModule(L.LightningDataModule):
     def __init__(
         self,
@@ -113,6 +113,7 @@ class LitLungDataModule(L.LightningDataModule):
         self.obs = h5ad.obs
 
     def pick_scenario(self):
+        train_ratio = 1 - (self.val_size + self.test_size)
         if self.scenario.startswith("patient"):
             # Scenario: split acros patients of the 10X_Transplant data (test one one patient, train on the other 5)
             obs_patient = self.obs.iloc[self.obs["dataset"].values == "10x_Transplant",]
@@ -120,6 +121,7 @@ class LitLungDataModule(L.LightningDataModule):
                 self.obs["dataset"].values == "10x_Transplant",
             ]
 
+            # Filter data
             data_patient_filter, obs_patient_filter = self.filter_counts_h5ad(
                 data_patient, obs_patient, self.min_celltypes
             )
@@ -129,13 +131,15 @@ class LitLungDataModule(L.LightningDataModule):
 
             current_sc = int(self.scenario.split("_")[1])
 
-            X_test = data_patient_filter.iloc[
+            # Read in OOD data
+            X_OOD = data_patient_filter.iloc[
                 obs_patient_filter["batch"].values == self.patients_ID[current_sc]
             ]
-            y_test = obs_patient_filter.iloc[
+            y_OOD = obs_patient_filter.iloc[
                 obs_patient_filter["batch"].values == self.patients_ID[current_sc]
             ]["cell_type"]
 
+            # Read in train_val(_test) data (= ID data) 
             X_train_val = data_patient_filter.iloc[
                 obs_patient_filter["batch"].values != self.patients_ID[current_sc]
             ]
@@ -143,18 +147,52 @@ class LitLungDataModule(L.LightningDataModule):
                 obs_patient_filter["batch"].values != self.patients_ID[current_sc]
             ]["cell_type"]
 
-            X_train, X_val, y_train, y_val = train_test_split(
+            # Split "ID" data
+            X_train, X_val_test, y_train, y_val_test = train_test_split(
                 X_train_val,
                 y_train_val,
-                test_size=self.val_size,
+                test_size=1-train_ratio,
                 stratify=y_train_val.iloc[:, 0],
                 random_state=0,
             )
 
-            return X_train, X_val, X_test, y_train, y_val, y_test
+            X_val, X_test, y_val, y_test = train_test_split(
+                X_val_test,
+                y_val_test,
+                test_size=self.test_size / (self.val_size + self.test_size),
+                stratify=y_val_test.iloc[:, 0],
+                random_state=0,
+            )
+
+            # Convert test ID and OOD data to dense and concatenate
+            data_test = torch.from_numpy(X_test.todense())
+            labels_test = torch.from_numpy(np.array(labels_test_conv))
+            data_OOD = torch.from_numpy(X_OOD.todense())
+            labels_OOD = torch.from_numpy(np.array(y_OOD))
+            data_test_total = torch.cat((data_test, data_OOD), 0)
+            labels_test_total = torch.cat((labels_test, labels_OOD), 0)
+
+            # Make an OOD indicator file
+            OOD_ind = pd.DataFrame(
+            [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
+            )
+            if not os.path.exists(
+            self.data_dir + "OOD_ind_lung" + "_dataset_" + str(self.name) + ".csv"
+            ):
+                OOD_ind.to_csv(
+                    self.data_dir
+                    + "OOD_ind_lung"
+                    + "_dataset_"
+                    + str(self.name)
+                    + ".csv"
+                )
+
+            return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
         elif self.scenario.startswith("protocol"):
-            # Scenario: Train/Val data is Sun study, Test data is Villani study
+            # Scenario: ID data is Sun study, OOD data is Villani study
+
+            # Read in, filter and split ID data
             obs_train_val = self.obs.iloc[
                 self.obs["dataset"].values == "10x_Transplant",
             ]
@@ -165,28 +203,61 @@ class LitLungDataModule(L.LightningDataModule):
                 data_train_val, obs_train_val, self.min_celltypes
             )
 
-            X_train, X_val, y_train, y_train_val = train_test_split(
+            X_train, X_val_test, y_train, y_val_test = train_test_split(
                 data_filter_train_val,
                 obs_filter_train_val["cell_type"],
-                test_size=self.val_size,
-                stratify=obs_filter_train_val["cell_type"].iloc[:, 0],
+                test_size= 1 - train_ratio
+                stratify= obs_filter_train_val["cell_type"].iloc[:, 0],
                 random_state=0,
             )
 
-            obs_test = self.obs.iloc[
+            X_val, X_test, y_val, y_test = train_test_split(
+                X_val_test,
+                y_val_test,
+                test_size=self.test_size / (self.val_size + self.test_size),
+                stratify=y_val_test.iloc[:, 0],
+                random_state=0,
+            )
+            
+            # Read in and filter OOD data
+            obs_OOD = self.obs.iloc[
                 self.obs["dataset"].values == "Dropseq_transplant",
             ]
-            data_test = self.data.iloc[
+            data_OOD = self.data.iloc[
                 self.obs["dataset"].values == "Dropseq_transplant",
             ]
-            X_test, y_test = self.filter_counts_h5ad(
-                data_test, obs_test["cell_type"], self.min_celltypes
+            X_OOD, y_OOD = self.filter_counts_h5ad(
+                data_OOD, obs_OOD["cell_type"], self.min_celltypes
             )
 
-            return X_train, X_val, X_test, y_train, y_val, y_test
+            # Convert test ID and OOD data to dense and concatenate
+            data_test = torch.from_numpy(X_test.todense())
+            labels_test = torch.from_numpy(np.array(y_test))
+            data_OOD = torch.from_numpy(X_OOD.todense())
+            labels_OOD = torch.from_numpy(np.array(y_OOD))
+            data_test_total = torch.cat((data_test, data_OOD), 0)
+            labels_test_total = torch.cat((labels_test, labels_OOD), 0)
+
+            # Make an OOD indicator file
+            OOD_ind = pd.DataFrame(
+            [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
+            )
+            if not os.path.exists(
+            self.data_dir + "OOD_ind_lung" + "_dataset_" + str(self.name) + ".csv"
+            ):
+                OOD_ind.to_csv(
+                    self.data_dir
+                    + "OOD_ind_lung"
+                    + "_dataset_"
+                    + str(self.name)
+                    + ".csv"
+                )
+            return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
         elif self.scenario.startswith("tissue"):
             # Scenario=:Train/Val data is Sun study, Test data is Oetjen study
+
+            # Read in ID data, filter and split
             obs_train_val = self.obs.iloc[
                 self.obs["dataset"].values == "10x_Transplant",
             ]
@@ -197,25 +268,56 @@ class LitLungDataModule(L.LightningDataModule):
                 data_train_val, obs_train_val, self.min_celltypes
             )
 
-            X_train, X_val, y_train, y_train_val = train_test_split(
+            X_train, X_val_test, y_train, y_val_test = train_test_split(
                 data_filter_train_val,
                 obs_filter_train_val["cell_type"],
-                test_size=self.val_size,
+                test_size=1-train_ratio,
                 stratify=obs_filter_train_val["cell_type"].iloc[:, 0],
                 random_state=0,
             )
 
-            # Test data is Oetjen study(Bone_marrow)
-            obs_test = self.obs.iloc[self.obs["dataset"].values == "10x_Biopsy",]
-            data_test = self.data.iloc[self.obs["dataset"].values == "10x_Biopsy",]
-            X_test, y_test = self.filter_counts_h5ad(
-                data_test, obs_test["cell_type"], self.min_celltypes
+             X_val, X_test, y_val, y_test = train_test_split(
+                X_val_test,
+                y_val_test,
+                test_size=self.test_size / (self.val_size + self.test_size),
+                stratify=y_val_test.iloc[:, 0],
+                random_state=0,
             )
 
-            return X_train, X_val, X_test, y_train, y_val, y_test
+            # OOD data is Oetjen study(Bone_marrow)
+            obs_OOD = self.obs.iloc[self.obs["dataset"].values == "10x_Biopsy",]
+            data_OOD = self.data.iloc[self.obs["dataset"].values == "10x_Biopsy",]
+            X_OOD, y_OOD= self.filter_counts_h5ad(
+                data_OOD, obs_OOD["cell_type"], self.min_celltypes
+            )
+
+            # Convert test ID and OOD data to dense and concatenate
+            data_test = torch.from_numpy(X_test.todense())
+            labels_test = torch.from_numpy(np.array(y_test))
+            data_OOD = torch.from_numpy(X_OOD.todense())
+            labels_OOD = torch.from_numpy(np.array(y_OOD))
+            data_test_total = torch.cat((data_test, data_OOD), 0)
+            labels_test_total = torch.cat((labels_test, labels_OOD), 0)
+
+            # Make an OOD indicator file
+            OOD_ind = pd.DataFrame(
+            [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
+            )
+            if not os.path.exists(
+            self.data_dir + "OOD_ind_lung" + "_dataset_" + str(self.name) + ".csv"
+            ):
+                OOD_ind.to_csv(
+                    self.data_dir
+                    + "OOD_ind_pancreas"
+                    + "_lung_"
+                    + str(self.name)
+                    + ".csv"
+                )
+
+            return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
     def check_for_OOD(self, y_train, y_test):
-        """Check if OOD labels are present in train/test split
+        """Check if OOD labels/celltypes are present in train/test split
 
         Parameters
         ----------
@@ -262,9 +364,9 @@ class LitLungDataModule(L.LightningDataModule):
             print("Size validation data", X_val.shape)
             print("Size test data", X_test.shape)
 
-        self.data_test = BaseDataset(
-            torch.from_numpy(X_test.to_dense()),
-            torch.from_numpy(np.array(labels_test)),
+        self.data_test = BaseDataset( # Already in dense format since concatenating with OOD data
+            torch.from_numpy(X_test),
+            torch.from_numpy(labels_test),
         )
 
         self.data_train = BaseDataset(
@@ -401,32 +503,43 @@ class LitImmuneDataModule(L.LightningDataModule):
         X_train, X_val, X_test, y_train, y_val, y_test
         """
         train_ratio = 1 - (self.val_size + self.test_size)
-        if self.scenario.startswith("intra"):
-            # Scenario: split across one specified patient from the Sun study
+        if self.scenario.startswith("patient"):
+            # Scenario: split acros patients of the Sun study (test one one patient, train on the other three)
             obs_patient = self.obs.iloc[self.obs["study"].values == "Sun",]
             data_patient = self.data.iloc[self.obs["study"].values == "Sun",]
+
+            # Filter data
+            data_patient_filter, obs_patient_filter = self.filter_counts_h5ad(
+                data_patient, obs_patient, self.min_celltypes
+            )
 
             if not hasattr(self, "patients_ID"):
                 self.patients_ID = np.unique(obs_patient["batch"])
 
             current_sc = int(self.scenario.split("_")[1])
 
-            data_scenario = data_patient.iloc[
-                obs_patient["batch"].values == self.patients_ID[current_sc]
+            # Read in OOD data
+            X_OOD = data_patient_filter.iloc[
+                obs_patient_filter["batch"].values == self.patients_ID[current_sc]
             ]
-            obs_scenario = obs_patient.iloc[
-                obs_patient["batch"].values == self.patients_ID[current_sc]
+            y_OOD = obs_patient_filter.iloc[
+                obs_patient_filter["batch"].values == self.patients_ID[current_sc]
+            ]["final_annnotation"]
+
+            # Read in train_val(_test) data (= ID data)
+            X_train_val = data_patient_filter.iloc[
+                obs_patient_filter["batch"].values != self.patients_ID[current_sc]
             ]
+            y_train_val = obs_patient_filter.iloc[
+                obs_patient_filter["batch"].values != self.patients_ID[current_sc]
+            ]["final_annnotation"]
 
-            data_scenario_filter, labels_scenario_filter = self.filter_counts_h5ad(
-                data_scenario, obs_scenario["final_annotation"], self.min_celltypes
-            )
-
+            # Split "ID" data
             X_train, X_val_test, y_train, y_val_test = train_test_split(
-                data_scenario_filter,
-                labels_scenario_filter,
-                test_size=1 - train_ratio,
-                stratify=labels_scenario_filter,
+                X_train_val,
+                y_train_val,
+                test_size=1-train_ratio,
+                stratify=y_train_val.iloc[:, 0],
                 random_state=0,
             )
 
@@ -437,94 +550,145 @@ class LitImmuneDataModule(L.LightningDataModule):
                 stratify=y_val_test.iloc[:, 0],
                 random_state=0,
             )
-            return X_train, X_val, X_test, y_train, y_val, y_test
 
-        elif self.scenario.startswith("patient"):
-            # Scenario: split acros patients of the Sun study (test one one patient, train on the other three)
-            obs_patient = self.obs.iloc[self.obs["study"].values == "Sun",]
-            data_patient = self.data.iloc[self.obs["study"].values == "Sun",]
+            # Convert test ID and OOD data to dense and concatenate
+            data_test = torch.from_numpy(X_test.todense())
+            labels_test = torch.from_numpy(np.array(y_test))
+            data_OOD = torch.from_numpy(X_OOD.todense())
+            labels_OOD = torch.from_numpy(np.array(y_OOD))
+            data_test_total = torch.cat((data_test, data_OOD), 0)
+            labels_test_total = torch.cat((labels_test, labels_OOD), 0)
 
-            data_patient_filter, obs_patient_filter = self.filter_counts_h5ad(
-                data_patient, obs_patient, self.min_celltypes
+            # Make an OOD indicator file
+            OOD_ind = pd.DataFrame(
+            [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
             )
+            if not os.path.exists(
+            self.data_dir + "OOD_ind_immune" + "_dataset_" + str(self.name) + ".csv"
+            ):
+                OOD_ind.to_csv(
+                    self.data_dir
+                    + "OOD_ind_pancreas"
+                    + "_immune_"
+                    + str(self.name)
+                    + ".csv"
+                )
 
-            if not hasattr(self, "patients_ID"):
-                self.patients_ID = np.unique(obs_patient["batch"])
-
-            current_sc = int(self.scenario.split("_")[1])
-
-            X_test = data_patient_filter.iloc[
-                obs_patient_filter["batch"].values == self.patients_ID[current_sc]
-            ]
-            y_test = obs_patient_filter.iloc[
-                obs_patient_filter["batch"].values == self.patients_ID[current_sc]
-            ]["final_annnotation"]
-
-            X_train_val = data_patient_filter.iloc[
-                obs_patient_filter["batch"].values != self.patients_ID[current_sc]
-            ]
-            y_train_val = obs_patient_filter.iloc[
-                obs_patient_filter["batch"].values != self.patients_ID[current_sc]
-            ]["final_annnotation"]
-
-            X_train, X_val, y_train, y_train_val = train_test_split(
-                X_train_val,
-                y_train_val,
-                test_size=self.val_size,
-                stratify=y_train_val.iloc[:, 0],
-                random_state=0,
-            )
-
-            return X_train, X_val, X_test, y_train, y_val, y_test
+            return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
         elif self.scenario.startswith("protocol"):
-            # Scenario: Train/Val data is Sun study, Test data is Villani study
+            # Scenario: ID data is Sun study, OOD data is Villani study
+
+            # Read in ID data, filter and split
             obs_train_val = self.obs.iloc[self.obs["study"].values == "Sun",]
             data_train_val = self.data.iloc[self.obs["study"].values == "Sun",]
             data_filter_train_val, obs_filter_train_val = self.filter_counts_h5ad(
                 data_train_val, obs_train_val, self.min_celltypes
             )
 
-            X_train, X_val, y_train, y_train_val = train_test_split(
+            X_train, X_val_test, y_train, y_val_test = train_test_split(
                 data_filter_train_val,
                 obs_filter_train_val["final_annotation"],
-                test_size=self.val_size,
+                test_size=1-train_ratio,
                 stratify=obs_filter_train_val["final_annotation"].iloc[:, 0],
                 random_state=0,
             )
-
-            obs_test = self.obs.iloc[self.obs["study"].values == "Villani",]
-            data_test = self.data.iloc[self.obs["study"].values == "Villani",]
-            X_test, y_test = self.filter_counts_h5ad(
-                data_test, obs_test["final_annotation"], self.min_celltypes
+            
+            X_val, X_test, y_val, y_test = train_test_split(
+                X_val_test,
+                y_val_test,
+                test_size=self.test_size / (self.val_size + self.test_size),
+                stratify=y_val_test.iloc[:, 0],
+                random_state=0,
             )
 
-            return X_train, X_val, X_test, y_train, y_val, y_test
+            # Read in OOD data and filter
+            obs_OOD = self.obs.iloc[self.obs["study"].values == "Villani",]
+            data_OOD = self.data.iloc[self.obs["study"].values == "Villani",]
+            X_OOD, y_OOD = self.filter_counts_h5ad(
+                data_OOD, obs_OOD["final_annotation"], self.min_celltypes
+            )
+
+            # Convert test ID and OOD data to dense and concatenate
+            data_test = torch.from_numpy(X_test.todense())
+            labels_test = torch.from_numpy(np.array(y_test))
+            data_OOD = torch.from_numpy(X_OOD.todense())
+            labels_OOD = torch.from_numpy(np.array(y_OOD))
+            data_test_total = torch.cat((data_test, data_OOD), 0)
+            labels_test_total = torch.cat((labels_test, labels_OOD), 0)
+
+            # Make an OOD indicator file
+            OOD_ind = pd.DataFrame(
+            [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
+            )
+            if not os.path.exists(
+            self.data_dir + "OOD_ind_immune" + "_dataset_" + str(self.name) + ".csv"
+            ):
+                OOD_ind.to_csv(
+                    self.data_dir
+                    + "OOD_ind_pancreas"
+                    + "_immune_"
+                    + str(self.name)
+                    + ".csv"
+                )
+
+            return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
         elif self.scenario.startswith("tissue"):
-            # Scenario=:Train/Val data is Sun study, Test data is Oetjen study
+            # Scenario=:ID data is Sun study, OOD data is Oetjen study
+
+            # Read in ID data, filter and split
             obs_train_val = self.obs.iloc[self.obs["study"].values == "Sun",]
             data_train_val = self.data.iloc[self.obs["study"].values == "Sun",]
             data_filter_train_val, obs_filter_train_val = self.filter_counts_h5ad(
                 data_train_val, obs_train_val, self.min_celltypes
             )
 
-            X_train, X_val, y_train, y_train_val = train_test_split(
+            X_train, X_val_test, y_train, y_val_test = train_test_split(
                 data_filter_train_val,
                 obs_filter_train_val["final_annotation"],
-                test_size=self.val_size,
+                test_size=1-train_ratio,
                 stratify=obs_filter_train_val["final_annotation"].iloc[:, 0],
                 random_state=0,
             )
 
-            # Test data is Oetjen study(Bone_marrow)
-            obs_test = self.obs.iloc[self.obs["study"].values == "Oetjen",]
-            data_test = self.data.iloc[self.obs["study"].values == "Oetjen",]
-            X_test, y_test = self.filter_counts_h5ad(
-                data_test, obs_test["final_annotation"], self.min_celltypes
+             X_val, X_test, y_val, y_test = train_test_split(
+                X_val_test,
+                y_val_test,
+                test_size=self.test_size / (self.val_size + self.test_size),
+                stratify=y_val_test.iloc[:, 0],
+                random_state=0,
+            
+            # OOD data is Oetjen study(Bone_marrow)
+            obs_OOD = self.obs.iloc[self.obs["study"].values == "Oetjen",]
+            data_OOD = self.data.iloc[self.obs["study"].values == "Oetjen",]
+            X_OOD, y_OOD = self.filter_counts_h5ad(
+                data_OOD, obs_OOD["final_annotation"], self.min_celltypes
             )
 
-            return X_train, X_val, X_test, y_train, y_val, y_test
+            # Convert test ID and OOD data to dense and concatenate
+            data_test = torch.from_numpy(X_test.todense())
+            labels_test = torch.from_numpy(np.array(y_test))
+            data_OOD = torch.from_numpy(X_OOD.todense())
+            labels_OOD = torch.from_numpy(np.array(y_OOD))
+            data_test_total = torch.cat((data_test, data_OOD), 0)
+            labels_test_total = torch.cat((labels_test, labels_OOD), 0)
+
+            # Make an OOD indicator file
+            OOD_ind = pd.DataFrame(
+            [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
+            )
+            if not os.path.exists(
+            self.data_dir + "OOD_ind_immune" + "_dataset_" + str(self.name) + ".csv"
+            ):
+                OOD_ind.to_csv(
+                    self.data_dir
+                    + "OOD_ind_pancreas"
+                    + "_immune_"
+                    + str(self.name)
+                    + ".csv"
+                )
+            return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
     def check_for_OOD(self, y_train, y_test):
         """Check if OOD labels are present in train/test split
