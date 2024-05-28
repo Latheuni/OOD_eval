@@ -1,6 +1,6 @@
 # packages
 import yaml
-
+from Datasets import *
 
 def read_config(yaml_file):
     """very sepcific yaml file
@@ -78,3 +78,152 @@ def Create_config(config_name,
     with open(config_dir + config_name + '.yml', 'w') as ff:
         yaml.dump(d, ff)
     
+def load_dataset(dataset_name, config_file):
+    """Constructs the lightning datasetmodule and reads in OOD indicator csv files (for novel celltypes or OOD data), based on config files
+    """
+    main_config, dataset_config, network_config, training_config = read_config(
+        config_file
+    )
+
+    if dataset_config["name"] == "Pancreas":
+        dataset = LitPancreasDataModule(
+            dataset_config["data_dir"],
+            dataset_config["data_file"],
+            dataset_config["label_conversion_file"],
+            dataset_config["batch_size"],
+            dataset_config["train_techs"],
+            dataset_config["OOD_techs"],
+            dataset_config["test_size"],
+            dataset_config["validation_size"],
+            dataset_config["min_celltypes"],
+            training_config["cpus"],
+            main_config["name"],
+            main_config["verbose"],
+        )
+        OOD_label_dataset = pd.read_csv(
+            dataset_config["data_dir"]
+            + "OOD_ind_pancreas"
+            + "_dataset_"
+            + main_config["name"]
+            + ".csv",
+            index_col=0,
+        )
+        OOD_label_celltype = pd.read_csv(
+            dataset_config["data_dir"]
+            + "OOD_ind_pancreas"
+            + "_celltypes_"
+            + main_config["name"]
+            + ".csv",
+            index_col=0,
+        )
+        return dataset, OOD_label_dataset, OOD_label_celltype
+    elif dataset_config["name"] == "Lung":
+        dataset = LitLungDataModule(
+            dataset_config["data_dir"],
+            dataset_config["data_file"],
+            dataset_config["label_conversion_file"],
+            dataset_config["scenario"],
+            dataset_config["batch_size"],
+            dataset_config["val_size"],
+            dataset_config["test_size"],
+            training_config["cpus"],
+            main_config["name"],
+            verbose = main_config["verbose"],
+        )
+        OOD_label_celltype = pd.read_csv(
+            dataset_config["data_dir"]
+            + "OOD_ind_lung"
+            + "_celltypes_"
+            + main_config["name"]
+            + ".csv",
+            index_col=0,
+        )
+        return dataset, OOD_label_celltype
+
+    elif dataset_config["name"] == "Immune":
+        dataset = LitImmuneDataModule(
+            dataset_config["data_dir"],
+            dataset_config["data_file"],
+            dataset_config["label_conversion_file"],
+            dataset_config["scenario"],
+            dataset_config["batch_size"],
+            dataset_config["val_size"],
+            dataset_config["test_size"],
+            training_config["cpus"],
+            main_config["name"],
+            verbose = main_config["verbose"],
+        )
+        OOD_label_celltype = pd.read_csv(
+            dataset_config["data_dir"]
+            + "OOD_ind_immune"
+            + "_celltypes_"
+            + main_config["name"]
+            + ".csv",
+            index_col=0,
+        )
+        return dataset, OOD_label_celltype
+    
+    def load_network(config_file):
+        main_config, dataset_config, network_config, training_config = read_config(
+        config_file)
+
+        if network_config["model"] == "linear":
+        network = LinearNetwork(
+            n_features,
+            n_classes,
+            network_config["nodes_per_layer"],
+            network_config["num_hidden_layer"],
+        )
+        else:
+            if training_config['OOD strategy'] == "dropout": # loss should be cross-entropy
+                network = DropoutNetwork(n_features, n_classes, network_config["nodes_per_layer"],
+                network_config["num_hidden_layer"],
+                network_config["num_hidden_layer"],
+                network_config["activation"],
+                0.5 )
+            else:
+                network = NonLinearNetwork(
+                    n_features,
+                    n_classes,
+                    network_config["nodes_per_layer"],
+                    network_config["num_hidden_layer"],
+                    network_config["activation"],
+                )
+        return(network)
+    
+    def evaluate_OOD(conf, pred, ytrue, OOD_ind, OOD_scenario, results_dict, verbose = True):
+        """Calculates all OOD metrics for OOD_ind labels, OOD_scenario has to be "dataset"
+        or "celltypes"
+        """
+        auroc_dataset, aupr_in_dataset, aupr_out_dataset, fpr_dataset = auc_and_fpr_recall(
+        conf, OOD_label_dataset.iloc[:, 0], 0.95)
+        acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(
+            conf.cpu().numpy(),
+            OOD_ind.iloc[:, 0].values,
+            pred,
+            ytrue,
+            verbose,
+        )
+
+        results_dict[OOD_scenario] = {
+        "auroc": auroc_dataset,
+        "aupr_in": aupr_in_dataset,
+        "aupr_out": aupr_out_dataset,
+        "fpr": fpr_dataset,
+        "acc_in": acc_ID,
+        "acc_out": acc_OOD,
+        "bacc_in": bacc_ID,
+        "bacc_out": bacc_OOD,
+        }
+
+        print(" \n")
+        print("-------")
+        print("Results")
+        print("-------")
+        print("For the " + str(OOD_scenario))
+        print("auroc", auroc_dataset)
+        print("aupr_in", aupr_in_dataset)
+        print("aupr_out", aupr_out_dataset)
+        print("fpr", fpr_dataset)
+
+        return(results_dict)

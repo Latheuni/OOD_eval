@@ -16,7 +16,7 @@ from pytorch_lightning.callbacks import (
     BasePredictionWriter,
     LearningRateMonitor,
     DeviceStatsMonitor,
-)
+) # TODO add learning rate scheduler
 from torchmetrics.classification import (
     Accuracy,
 )  # MultiClassAccuracy in newer versions of lightning (here 0.9.3)
@@ -38,18 +38,16 @@ else:
     )
 
 ## Own imports
-from utils import read_config
+# TODO clear these up (no *)
+from utils import *
 from Datasets import LitPancreasDataModule
 from Networks import LinearNetwork, NonLinearNetwork
 from Trainers import LitBasicNN
 from Losses import *
 from Metrics import *
-
-
+from Post_processors import *
 # Code
 ## basic module
-
-
 # Writes predictions in .pt format
 class CustomWriter(BasePredictionWriter):
     def __init__(self, config_file):
@@ -192,10 +190,14 @@ def train_step(config_file, train_test_together=False):
         config_file
     )
     verbose = main_config["verbose"]
-    if training_config["loss_function"] == "logitnorm":
-        loss_function = LogitNormLoss()
-    elif training_config["loss_function"] in ["cross-entropy", "cross entropy"]:
-        loss_function = CrossEntropyLoss()
+
+    # Define Loss function
+    loss_dict = {
+        "logitnorm": LogitNormLoss(),
+        "cross-entropy": CrossEntropyLoss(),
+        "cross entropy": CrossEntropyLoss()
+    }
+    loss_function = loss_dict[training_config["loss_function"]]
 
     # Set up directionary to save the results
     if verbose == "True":
@@ -204,40 +206,12 @@ def train_step(config_file, train_test_together=False):
         os.mkdir(main_config["output_dir"] + main_config["name"] + "/")
 
     # Define the dataset
-    if dataset_config["name"] == "Pancreas":
-        DataLoader = LitPancreasDataModule(
-            dataset_config["data_dir"],
-            dataset_config["data_file"],
-            dataset_config["label_conversion_file"],
-            dataset_config["batch_size"],
-            dataset_config["train_techs"],
-            dataset_config["OOD_techs"],
-            dataset_config["test_size"],
-            dataset_config["validation_size"],
-            dataset_config["min_celltypes"],
-            training_config["cpus"],
-            main_config["name"],
-            main_config["verbose"],
-        )
-        n_classes = DataLoader.n_classes()
-        n_features = DataLoader.n_features()
+    DataLoader, __ , __ = load_dataset(dataset_config["name"], config_file)
+    n_classes = DataLoader.n_classes()
+    n_features = DataLoader.n_features()
 
     # Define network
-    if network_config["model"] == "linear":
-        network = LinearNetwork(
-            n_features,
-            n_classes,
-            network_config["nodes_per_layer"],
-            network_config["num_hidden_layer"],
-        )
-    else:
-        network = NonLinearNetwork(
-            n_features,
-            n_classes,
-            network_config["nodes_per_layer"],
-            network_config["num_hidden_layer"],
-            network_config["activation"],
-        )
+    network = load_network(config_file)
 
     # Define model
     if verbose == "True":
@@ -278,6 +252,7 @@ def train_step(config_file, train_test_together=False):
         debug = True
     else:
         debug = False
+
     trainer = Trainer(
         fast_dev_run=debug,
         max_epochs=training_config["max_epochs"],
@@ -307,42 +282,18 @@ def test_step(config_file, model):
     # Define the dataset
     if verbose == "True":
         print("Read in model and set up analysis")
-    if dataset_config["name"] == "Pancreas":
-        dataset = LitPancreasDataModule(
-            dataset_config["data_dir"],
-            dataset_config["data_file"],
-            dataset_config["label_conversion_file"],
-            dataset_config["batch_size"],
-            dataset_config["train_techs"],
-            dataset_config["OOD_techs"],
-            dataset_config["test_size"],
-            dataset_config["validation_size"],
-            dataset_config["min_celltypes"],
-            training_config["cpus"],
-            main_config["name"],
-            main_config["verbose"],
-        )
-        OOD_label_dataset = pd.read_csv(
-            dataset_config["data_dir"]
-            + "OOD_ind_pancreas"
-            + "_dataset_"
-            + main_config["name"]
-            + ".csv",
-            index_col=0,
-        )
-        OOD_label_celltype = pd.read_csv(
-            dataset_config["data_dir"]
-            + "OOD_ind_pancreas"
-            + "_celltypes_"
-            + main_config["name"]
-            + ".csv",
-            index_col=0,
-        )
+    dataset, OOD_label_dataset, OOD_label_celltype = load_dataset( dataset_config["name"], config_file)
+    # TODO change config creation based on new datasets
+    test_X = dataset.test_dataloader().data
+    y_true = dataset.test_dataloader().labels
 
     # load model
     if type(model) is str:
         os.chdir(main_config["output_dir"] + main_config["name"] + "/")
         model = LitBasicNN.load_from_checkpoint(model)
+    
+    # load network
+    network = model.return_net()
 
     # Logger
     Logger = TensorBoardLogger(
@@ -359,96 +310,53 @@ def test_step(config_file, model):
     device_stats = DeviceStatsMonitor()
     callbacks_list = [checkpoint_test, pred_writer, device_stats]
 
+    # PostProcess
+    postprocessor_dict = {
+        logitnorm: base_postprocessor(),
+        dropout: dropout_postprocessor(),
+        EBO: EBO_postprocessor()
+    }
+    postprocessor = postprocessor_dict[training_config['OOD_strategy']]
+    pred,conf = postprocessor.postprocess(network, test_X)
+
     # Trainer
-    trainer = Trainer(
-        max_epochs=training_config["max_epochs"],
-        logger=Logger,
-        callbacks=callbacks_list,
-        default_root_dir=main_config["output_dir"] + main_config["name"] + "/",
-        enable_progress_bar=False,
-        accelerator=training_config["accelerator"],
-        devices=training_config["devices"],
-    )
+    # trainer = Trainer(
+    #     max_epochs=training_config["max_epochs"],
+    #     logger=Logger,
+    #     callbacks=callbacks_list,
+    #     default_root_dir=main_config["output_dir"] + main_config["name"] + "/",
+    #     enable_progress_bar=False,
+    #     accelerator=training_config["accelerator"],
+    #     devices=training_config["devices"],
+    # )
 
-    # Test
-    if verbose == "True":
-        print("Start testing")
-    trainer.test(model, datamodule=dataset)
+    # # Test
+    # if verbose == "True":
+    #     print("Start testing")
+    # trainer.test(model, datamodule=dataset)
 
-    # predict
-    if verbose == "True":
-        print("Start predicting")
-    trainer.predict(model, datamodule=dataset)
+    # # predict
+    # if verbose == "True":
+    #     print("Start predicting")
+    # trainer.predict(model, datamodule=dataset)
 
     # Calculate statistics
-    confidence = torch.max(model.scores, 1).values
 
+    # TODO need to change splits, need some ID in test data
     results_dict = {}
-    auroc_dataset, aupr_in_dataset, aupr_out_dataset, fpr_dataset = auc_and_fpr_recall(
-        confidence.cpu().numpy(), OOD_label_dataset.iloc[:, 0], 0.95
-    )
-    acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(
-        model.scores.cpu().numpy(),
-        OOD_label_dataset.iloc[:, 0].values,
-        model.predictions.cpu().numpy(),
-        model.ytrue.cpu().numpy(),
-        verbose,
-    )
-    results_dict["dataset"] = {
-        "auroc": auroc_dataset,
-        "aupr_in": aupr_in_dataset,
-        "aupr_out": aupr_out_dataset,
-        "fpr": fpr_dataset,
-        "acc_in": acc_ID,
-        "acc_out": acc_OOD,
-        "bacc_in": bacc_ID,
-        "bacc_out": bacc_OOD,
-    }
-    print(" \n")
-    print("-------")
-    print("Results")
-    print("-------")
-    print("For the dataset")
-    print("auroc", auroc_dataset)
-    print("aupr_in", aupr_in_dataset)
-    print("aupr_out", aupr_out_dataset)
-    print("fpr", fpr_dataset)
-
+    results_dict = evaluate_OOD(conf, pred, ytrue, OOD_label_dataset, "dataset", results_dict)
+    
+   
     if not np.isnan(OOD_label_celltype.iloc[0, 0]):
-        auroc_celltype, aupr_in_celltype, aupr_out_celltype, fpr_celltype = (
-            auc_and_fpr_recall(
-                confidence.cpu().numpy(), OOD_label_celltype.iloc[:, 0].values, 0.95
-            )
-        )
-        acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(
-            model.scores.cpu().numpy(),
-            OOD_label_celltype.iloc[:, 0].values,
-            model.predictions.cpu().numpy(),
-            model.ytrue.cpu().numpy(),
-            verbose,
-        )
-        results_dict["celltype"] = {
-            "auroc": auroc_celltype,
-            "aupr_in": aupr_in_celltype,
-            "aupr_out": aupr_out_celltype,
-            "fpr": fpr_celltype,
-            "acc_in": acc_ID,
-            "acc_out": acc_OOD,
-            "bacc_in": bacc_ID,
-            "bacc_out": bacc_OOD,
-        }
-        print("-------")
-        print("For the celltypes")
-        print("auroc", auroc_celltype)
-        print("aupr_in", aupr_in_celltype)
-        print("aupr_out", aupr_out_celltype)
-        print("fpr", fpr_celltype)
+        results_dict = evaluate_OOD(conf, pred, ytrue, OOD_label_celltype, "celltype", results_dict)
     else:
         results_dict["celltype"] = None
         print("No OOD celltypes, so no celltype analysis")
-    max_elem, max_ind = torch.max(model.scores.cpu(), dim=1)
+
+    # TODO check this     
+    max_elem, max_ind = torch.max(conf, dim=1) # TODO Check: under the assumption that conf does not max
     R = Accuracy_reject_curves(
-        max_elem, model.ytrue.cpu().numpy(), model.predictions.cpu().numpy()
+        max_elem, ytrue, pred
     )
     plot_AR_curves(
         R,

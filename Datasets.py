@@ -37,6 +37,7 @@ class BaseDataset(Dataset):  # Input for the LightningDataModule
 
 
 ## DataModules
+# NOTE: for the Lung and Immune dataset, the entire test set is OOD, this is not the case for the Pancreas dataset. # TODO follow-up
 class LitLungDataModule(L.LightningDataModule):
     def __init__(
         self,
@@ -284,12 +285,12 @@ class LitLungDataModule(L.LightningDataModule):
             print("/n")
 
         if not os.path.exists(
-            self.data_dir + "OOD_ind_pancreas" + "_dataset_" + str(self.name) + ".csv"
+            self.data_dir + "OOD_ind_lung" + "_celltype_" + str(self.name) + ".csv"
         ):
             OOD_ind.to_csv(
                 self.data_dir
-                + "OOD_ind_pancreas"
-                + "_dataset_"
+                + "OOD_ind_lung"
+                + "_celltype_"
                 + str(self.name)
                 + ".csv"
             )
@@ -595,12 +596,12 @@ class LitImmuneDataModule(L.LightningDataModule):
             print("Percentage OOD", sum(OOD_ind) / len(y_test))
             print("/n")
         if not os.path.exists(
-            self.data_dir + "OOD_ind_pancreas" + "_dataset_" + str(self.name) + ".csv"
+            self.data_dir + "OOD_ind_immune" + "_celltype_" + str(self.name) + ".csv"
         ):
             OOD_ind.to_csv(
                 self.data_dir
-                + "OOD_ind_pancreas"
-                + "_dataset_"
+                + "OOD_ind_immune"
+                + "_celltype_"
                 + str(self.name)
                 + ".csv"
             )

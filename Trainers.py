@@ -46,3 +46,6 @@ class LitBasicNN(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optimize.Adam(self.parameters, lr=self.lr)
+
+    def return_net(self):
+        return self.NN
