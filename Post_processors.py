@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-
+from torch import nn
 # Adapted from code OpenOOD
 # NOTE to self: post processing is something completely different from testing/predicting
 class base_postprocessor():
@@ -29,7 +29,7 @@ class dropout_postprocessor():
          conf, pred = torch.max(score, dim=1)
          return pred, conf
 
-# TODO: Checkif this needs a softmax before        
+# TODO: Checkif this needs a softmax before and add predict   
 class EBO_postprocessor():
     def __init__(self, temperature):
         self.temperature = temperature
