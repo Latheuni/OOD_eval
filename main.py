@@ -16,7 +16,7 @@ from pytorch_lightning.callbacks import (
     BasePredictionWriter,
     LearningRateMonitor,
     DeviceStatsMonitor,
-) # TODO add learning rate scheduler
+) 
 from torchmetrics.classification import (
     Accuracy,
 )  # MultiClassAccuracy in newer versions of lightning (here 0.9.3)
@@ -38,14 +38,14 @@ else:
     )
 
 ## Own imports
-# TODO clear these up (no *)
-from utils import *
+# TODO clear these up (no *)l
+from utils import read_config, load_dataset, load_network, evaluate_OOD
 from Datasets import LitPancreasDataModule
 from Networks import LinearNetwork, NonLinearNetwork
 from Trainers import LitBasicNN
-from Losses import *
-from Metrics import *
-from Post_processors import *
+from Losses import LogitNormLoss, CrossEntropyLoss
+from Metrics import general_metrics, accuracy_reject_curves, auc_and_fpr_recall, plot_AR_curves
+from Post_processors import base_postprocessor, dropout_postprocessor, EBO_postprocessor
 # Code
 ## basic module
 # Writes predictions in .pt format
@@ -194,10 +194,9 @@ def train_step(config_file, train_test_together=False):
     # Define Loss function
     loss_dict = {
         "logitnorm": LogitNormLoss(),
-        "cross-entropy": CrossEntropyLoss(),
-        "cross entropy": CrossEntropyLoss()
+        "dropout": CrossEntropyLoss(),
     }
-    loss_function = loss_dict[training_config["loss_function"]]
+    loss_function = loss_dict[training_config["OOD_strategy"]]
 
     # Set up directionary to save the results
     if verbose == "True":
@@ -355,7 +354,7 @@ def test_step(config_file, model):
 
     # TODO check this     
     max_elem, max_ind = torch.max(conf, dim=1) # TODO Check: under the assumption that conf does not max
-    R = Accuracy_reject_curves(
+    R = accuracy_reject_curves(
         max_elem, ytrue, pred
     )
     plot_AR_curves(
