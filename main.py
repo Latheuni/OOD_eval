@@ -316,7 +316,7 @@ def test_step(config_file, model):
         EBO: EBO_postprocessor()
     }
     postprocessor = postprocessor_dict[training_config['OOD_strategy']]
-    pred,conf = postprocessor.postprocess(network, test_X)
+    pred, conf, scores = postprocessor.postprocess(network, test_X) # conf is the score of the prediction, scores returns everything
 
     # Trainer
     # trainer = Trainer(
@@ -340,8 +340,6 @@ def test_step(config_file, model):
     # trainer.predict(model, datamodule=dataset)
 
     # Calculate statistics
-
-    # TODO need to change splits, need some ID in test data
     results_dict = {}
     results_dict = evaluate_OOD(conf, pred, ytrue, OOD_label_dataset, "dataset", results_dict)
     
@@ -352,10 +350,8 @@ def test_step(config_file, model):
         results_dict["celltype"] = None
         print("No OOD celltypes, so no celltype analysis")
 
-    # TODO check this     
-    max_elem, max_ind = torch.max(conf, dim=1) # TODO Check: under the assumption that conf does not max
     R = accuracy_reject_curves(
-        max_elem, ytrue, pred
+        conf, ytrue, pred
     )
     plot_AR_curves(
         R,
@@ -380,7 +376,8 @@ def test_step(config_file, model):
     )
 
     return (
-        model.scores.cpu().numpy(),
+        scores,
+        conf, 
         model.ytrue.cpu().numpy(),
         model.predictions.cpu().numpy(),
     )

@@ -230,7 +230,6 @@ def load_dataset(dataset_name, config_file):
         auroc_dataset, aupr_in_dataset, aupr_out_dataset, fpr_dataset = auc_and_fpr_recall(
         conf, OOD_label_dataset.iloc[:, 0], 0.95)
         acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(
-            conf.cpu().numpy(),
             OOD_ind.iloc[:, 0].values,
             pred,
             ytrue,

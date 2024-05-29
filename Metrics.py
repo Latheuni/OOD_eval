@@ -12,7 +12,7 @@ def convert_ind(ind_array):
     """
     return(np.array([True if i == -1 else False for i in ind_array]))
 
-def general_metrics(conf, OOD_ind, predictions, ytrue, verbose):
+def general_metrics(OOD_ind, predictions, ytrue, verbose):
     """
     Calculated ID and OOD accuracy score and balanced accuracy score
     """
