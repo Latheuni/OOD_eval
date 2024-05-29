@@ -8,6 +8,7 @@ import argparse
 import datetime
 
 import pytorch_lightning as L
+import torch.nn.functional as F
 from pytorch_lightning import Trainer
 from torch.nn.functional import softmax
 from pytorch_lightning.callbacks import (
@@ -16,7 +17,7 @@ from pytorch_lightning.callbacks import (
     BasePredictionWriter,
     LearningRateMonitor,
     DeviceStatsMonitor,
-) 
+)
 from torchmetrics.classification import (
     Accuracy,
 )  # MultiClassAccuracy in newer versions of lightning (here 0.9.3)
@@ -40,12 +41,18 @@ else:
 ## Own imports
 # TODO clear these up (no *)l
 from utils import read_config, load_dataset, load_network, evaluate_OOD
-from Datasets import LitPancreasDataModule
-from Networks import LinearNetwork, NonLinearNetwork
+
 from Trainers import LitBasicNN
 from Losses import LogitNormLoss, CrossEntropyLoss
-from Metrics import general_metrics, accuracy_reject_curves, auc_and_fpr_recall, plot_AR_curves
+from Metrics import (
+    general_metrics,
+    accuracy_reject_curves,
+    auc_and_fpr_recall,
+    plot_AR_curves,
+)
 from Post_processors import base_postprocessor, dropout_postprocessor, EBO_postprocessor
+
+
 # Code
 ## basic module
 # Writes predictions in .pt format
@@ -205,12 +212,12 @@ def train_step(config_file, train_test_together=False):
         os.mkdir(main_config["output_dir"] + main_config["name"] + "/")
 
     # Define the dataset
-    DataLoader, __ , __ = load_dataset(dataset_config["name"], config_file)
+    DataLoader, __, __ = load_dataset(config_file)
     n_classes = DataLoader.n_classes()
     n_features = DataLoader.n_features()
 
     # Define network
-    network = load_network(config_file)
+    network = load_network(config_file, n_classes, n_features)
 
     # Define model
     if verbose == "True":
@@ -281,7 +288,7 @@ def test_step(config_file, model):
     # Define the dataset
     if verbose == "True":
         print("Read in model and set up analysis")
-    dataset, OOD_label_dataset, OOD_label_celltype = load_dataset( dataset_config["name"], config_file)
+    dataset, OOD_label_dataset, OOD_label_celltype = load_dataset(config_file)
     # TODO change config creation based on new datasets
     test_X = dataset.test_dataloader().data
     y_true = dataset.test_dataloader().labels
@@ -290,7 +297,7 @@ def test_step(config_file, model):
     if type(model) is str:
         os.chdir(main_config["output_dir"] + main_config["name"] + "/")
         model = LitBasicNN.load_from_checkpoint(model)
-    
+
     # load network
     network = model.return_net()
 
@@ -311,12 +318,14 @@ def test_step(config_file, model):
 
     # PostProcess
     postprocessor_dict = {
-        logitnorm: base_postprocessor(),
-        dropout: dropout_postprocessor(),
-        EBO: EBO_postprocessor()
+        "logitnorm": base_postprocessor(),
+        "dropout": dropout_postprocessor(),
+        "EBO": EBO_postprocessor(),
     }
-    postprocessor = postprocessor_dict[training_config['OOD_strategy']]
-    pred, conf, scores = postprocessor.postprocess(network, test_X) # conf is the score of the prediction, scores returns everything
+    postprocessor = postprocessor_dict[training_config["OOD_strategy"]]
+    pred, conf, scores = postprocessor.postprocess(
+        network, test_X
+    )  # conf is the score of the prediction, scores returns everything
 
     # Trainer
     # trainer = Trainer(
@@ -341,18 +350,19 @@ def test_step(config_file, model):
 
     # Calculate statistics
     results_dict = {}
-    results_dict = evaluate_OOD(conf, pred, ytrue, OOD_label_dataset, "dataset", results_dict)
-    
-   
+    results_dict = evaluate_OOD(
+        conf, pred, ytrue, OOD_label_dataset, "dataset", results_dict
+    )
+
     if not np.isnan(OOD_label_celltype.iloc[0, 0]):
-        results_dict = evaluate_OOD(conf, pred, ytrue, OOD_label_celltype, "celltype", results_dict)
+        results_dict = evaluate_OOD(
+            conf, pred, ytrue, OOD_label_celltype, "celltype", results_dict
+        )
     else:
         results_dict["celltype"] = None
         print("No OOD celltypes, so no celltype analysis")
 
-    R = accuracy_reject_curves(
-        conf, ytrue, pred
-    )
+    R = accuracy_reject_curves(conf, ytrue, pred)
     plot_AR_curves(
         R,
         main_config["output_dir"]
@@ -377,7 +387,7 @@ def test_step(config_file, model):
 
     return (
         scores,
-        conf, 
+        conf,
         model.ytrue.cpu().numpy(),
         model.predictions.cpu().numpy(),
     )

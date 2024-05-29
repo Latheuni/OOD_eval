@@ -166,7 +166,7 @@ class LitLungDataModule(L.LightningDataModule):
 
             # Convert test ID and OOD data to dense and concatenate
             data_test = torch.from_numpy(X_test.todense())
-            labels_test = torch.from_numpy(np.array(labels_test_conv))
+            labels_test = torch.from_numpy(np.array(y_test))
             data_OOD = torch.from_numpy(X_OOD.todense())
             labels_OOD = torch.from_numpy(np.array(y_OOD))
             data_test_total = torch.cat((data_test, data_OOD), 0)
@@ -206,7 +206,7 @@ class LitLungDataModule(L.LightningDataModule):
             X_train, X_val_test, y_train, y_val_test = train_test_split(
                 data_filter_train_val,
                 obs_filter_train_val["cell_type"],
-                test_size= 1 - train_ratio
+                test_size= 1 - train_ratio,
                 stratify= obs_filter_train_val["cell_type"].iloc[:, 0],
                 random_state=0,
             )
@@ -276,7 +276,7 @@ class LitLungDataModule(L.LightningDataModule):
                 random_state=0,
             )
 
-             X_val, X_test, y_val, y_test = train_test_split(
+            X_val, X_test, y_val, y_test = train_test_split(
                 X_val_test,
                 y_val_test,
                 test_size=self.test_size / (self.val_size + self.test_size),
@@ -652,12 +652,13 @@ class LitImmuneDataModule(L.LightningDataModule):
                 random_state=0,
             )
 
-             X_val, X_test, y_val, y_test = train_test_split(
+            X_val, X_test, y_val, y_test = train_test_split(
                 X_val_test,
                 y_val_test,
                 test_size=self.test_size / (self.val_size + self.test_size),
                 stratify=y_val_test.iloc[:, 0],
                 random_state=0,
+            )
             
             # OOD data is Oetjen study(Bone_marrow)
             obs_OOD = self.obs.iloc[self.obs["study"].values == "Oetjen",]

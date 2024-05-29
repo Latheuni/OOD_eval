@@ -4,13 +4,15 @@ import pandas as pd
 import seaborn as sns
 from sklearn import metrics
 
+
 # Code from openOOD benchmark:  https://github.com/Jingkang50/OpenOOD/blob/main/openood/evaluators/metrics.py#L40
 # accessed 05/03/2024
 def convert_ind(ind_array):
     """
     convert -1, 1 to corresponding True/False boolean araay (for OOD indicator)
     """
-    return(np.array([True if i == -1 else False for i in ind_array]))
+    return np.array([True if i == -1 else False for i in ind_array])
+
 
 def general_metrics(OOD_ind, predictions, ytrue, verbose):
     """
@@ -19,16 +21,20 @@ def general_metrics(OOD_ind, predictions, ytrue, verbose):
     if not isinstance(OOD_ind, np.ndarray):
         OOD_ind = np.array(OOD_ind)
         if verbose:
-            print('Converted OOD_ind', OOD_ind)
+            print("Converted OOD_ind", OOD_ind)
 
-    OOD_pred = pd.DataFrame(predictions).iloc[convert_ind(OOD_ind),:]
-    ID_pred = pd.DataFrame(predictions).iloc[~convert_ind( OOD_ind),:]
-    OOD_conf = pd.DataFrame(conf).iloc[convert_ind(OOD_ind),:]
-    ID_conf = pd.DataFrame(conf).iloc[~convert_ind( OOD_ind),:]
-    OOD_ytrue = pd.DataFrame(ytrue).iloc[convert_ind(OOD_ind),:]
-    ID_ytrue = pd.DataFrame(ytrue).iloc[~convert_ind( OOD_ind),:]
+    OOD_pred = pd.DataFrame(predictions).iloc[convert_ind(OOD_ind), :]
+    ID_pred = pd.DataFrame(predictions).iloc[~convert_ind(OOD_ind), :]
+    OOD_ytrue = pd.DataFrame(ytrue).iloc[convert_ind(OOD_ind), :]
+    ID_ytrue = pd.DataFrame(ytrue).iloc[~convert_ind(OOD_ind), :]
 
-    return metrics.accuracy_score(OOD_ytrue, OOD_pred),metrics.accuracy_score(ID_ytrue, ID_pred), metrics.balanced_accuracy_score(OOD_ytrue, OOD_pred), metrics.balanced_accuracy_score(ID_ytrue, ID_pred)
+    return (
+        metrics.accuracy_score(OOD_ytrue, OOD_pred),
+        metrics.accuracy_score(ID_ytrue, ID_pred),
+        metrics.balanced_accuracy_score(OOD_ytrue, OOD_pred),
+        metrics.balanced_accuracy_score(ID_ytrue, ID_pred),
+    )
+
 
 def accuracy_reject_curves(conf_scores, ytrue, predictions):
     """
@@ -42,22 +48,26 @@ def accuracy_reject_curves(conf_scores, ytrue, predictions):
     for i in range(0, len(steps)):
         t = steps[i]
         ind = [bool(s > t) for s in conf_scores]
-        perc[i] = (len(ind) - sum(ind))/len(ind)
+        perc[i] = (len(ind) - sum(ind)) / len(ind)
         if sum(ind) > 0:
-            acc[i] = metrics.accuracy_score(pd.DataFrame(ytrue).iloc[ind], pd.DataFrame(predictions).iloc[ind])
+            acc[i] = metrics.accuracy_score(
+                pd.DataFrame(ytrue).iloc[ind], pd.DataFrame(predictions).iloc[ind]
+            )
         else:
             acc[i] = 1.0
     results = pd.DataFrame([acc, steps, perc]).T
-    results.columns = ['Acc', 'Steps', "Percentage"]
+    results.columns = ["Acc", "Steps", "Percentage"]
     return results
+
 
 def plot_AR_curves(results, file_dir):
     """
     Plot AR curve
     """
-    x = sns.lineplot(results, x = "Steps", y = "Acc")
+    x = sns.lineplot(results, x="Steps", y="Acc")
     fig = x.get_figure()
     fig.savefig(file_dir)
+
 
 def auc_and_fpr_recall(conf, label, tpr_th):
     """

@@ -27,7 +27,13 @@ class LinearNetwork(nn.Sequential):  # Deep Linear network
 
 class DropoutNetwork(nn.Sequential):
     def __init__(
-        self, input_dim, output_dim, nodes_per_layer, num_hidden_layers, activation, dropout_p
+        self,
+        input_dim,
+        output_dim,
+        nodes_per_layer,
+        num_hidden_layers,
+        activation,
+        dropout_p,
     ):
         super(DropoutNetwork, self).__init__()
         if num_hidden_layers == 0:
@@ -38,10 +44,10 @@ class DropoutNetwork(nn.Sequential):
         else:
             dims = [input_dim] + num_hidden_layers * [nodes_per_layer] + [output_dim]
         self.predictor = nn.ModuleList()
-        
+
         for i in range(0, num_hidden_layers + 1):
             self.predictor.append(nn.Linear(dims[i], dims[i + 1]))
-             if i != num_hidden_layers:
+            if i != num_hidden_layers:
                 if activation == "elu":
                     self.predictor.append(nn.ELU())
                 elif activation == "relu":
