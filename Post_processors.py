@@ -9,9 +9,9 @@ class base_postprocessor():
     
      def postprocess(self, net: nn.Module, data: Any):
         output = net(data)
-        score = torch.softmax(output, dim=1)
+        scores = torch.softmax(output, dim=1)
         conf, pred = torch.max(score, dim=1)
-        return pred, conf
+        return pred, conf, scores
          
 class dropout_postprocessor():
     def __init__(self, config, dropout_times):
@@ -27,16 +27,19 @@ class dropout_postprocessor():
          logits_mean /= self.dropout_times
          score = torch.softmax(logits_mean, dim=1)
          conf, pred = torch.max(score, dim=1)
-         return pred, conf
+         return pred, conf, scores
 
-# TODO: Checkif this needs a softmax before and add predict   
+ 
 class EBO_postprocessor():
-    def __init__(self, temperature):
+    def __init__(self, temperature = 1): 
         self.temperature = temperature
     
-    def postprocess(self, scores):
-        conf = self.temperature * torch.logsumexp(scores / self.temperature, dim=1)
-        return conf
+    def postprocess(self, net, data):
+        output = net(data)
+        score = torch.softmax(output, dim=1)
+        _, pred = torch.max(score, dim=1)
+        conf = self.temperature * torch.logsumexp(output/ self.temperature, dim=1)
+        return pred, conf, score
 
 # class EnsemblePostprocessor(BasePostprocessor):
 #     def __init__(self, config):
