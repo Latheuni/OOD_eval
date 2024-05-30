@@ -414,10 +414,17 @@ class LitLungDataModule(L.LightningDataModule):
             self.data_test, batch_size=self.batch, num_workers=self.cpus
         )
         return [predict_loader]
+    def n_classes(self):
+        """Returns the number of unqiue label classes"""
+        return len(np.unique((self.conversion_dict.values())))
+    def n_features(self):
+        """Return the number od features"""
+        h5ad = sc.read_h5ad(self.data_dir + self.data_file)
+        data = sparse.csr_matrix(h5ad.X)
+        return data.shape[1]
 
 
 class LitImmuneDataModule(L.LightningDataModule):
-
     def __init__(
         self,
         data_dir,
@@ -802,7 +809,15 @@ class LitImmuneDataModule(L.LightningDataModule):
 
         adata.write_h5ad(self.data_dir + filename)
         self.anndata_umap = adata
-
+    def n_classes(self):
+        """Returns the number of unqiue label classes"""
+        return len(np.unique((self.conversion_dict.values())))
+    
+    def n_features(self):
+        """Return the number of features"""
+        h5ad = sc.read_h5ad(self.data_dir + self.data_file)
+        data = sparse.csr_matrix(h5ad.X)
+        return data.shape[1]
 
 class LitPancreasDataModule(L.LightningDataModule):
     def __init__(
