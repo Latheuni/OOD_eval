@@ -7,6 +7,7 @@ import pandas as pd
 import argparse
 import datetime
 
+import torchmetrics
 import pytorch_lightning as L
 import torch.nn.functional as F
 from pytorch_lightning import Trainer
@@ -28,8 +29,8 @@ from pytorch_lightning.callbacks import BasePredictionWriter
 import torch
 from torch import nn
 
-print("Pytorch Lighntning version used is", L.__version__)
-if L.__version__ > "0.9.3":
+print("Torchmetrics version used is", torchmetrics.__version__)
+if torchmetrics.__version__ > "0.9.3":
     from torchmetrics.classification import (
         MulticlassAccuracy,
     )
@@ -39,9 +40,7 @@ else:
     )
 
 ## Own imports
-# TODO clear these up (no *)l
 from utils import read_config, load_dataset, load_network, evaluate_OOD
-
 from Trainers import LitBasicNN
 from Losses import LogitNormLoss, CrossEntropyLoss
 from Metrics import (
@@ -89,7 +88,7 @@ class LitBasicNN(L.LightningModule):
         self.lr = learning_rate
         self.decay = decay
 
-        if L.__version__ > "0.9.3":
+        if torchmetrics.__version__ > "0.9.3":
             self.accuracy = MulticlassAccuracy(
                 num_classes=n_classes, average="micro"
             )  # is not callable
@@ -181,47 +180,54 @@ class LitBasicNN(L.LightningModule):
         return torch.argmax(scores, dim=1)
 
     def configure_optimizers(self):
+        lambd = lambda epoch: self.decay
+        
         optimizer = torch.optim.Adam(
             self.parameters(), lr=float(self.lr)
         )  # can still add weight decay
-        lambd = lambda epoch: self.decay
-        lr_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(
-            optimizer, lr_lambda=lambd
-        )
+
+        #lr_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(
+        #    optimizer, lr_lambda=lambd
+        #)
         return optimizer
 
 
 def train_step(config_file, train_test_together=False):
+  
     # Read in parameters
     main_config, dataset_config, network_config, training_config = read_config(
         config_file
     )
     verbose = main_config["verbose"]
+    if verbose:
+        print(" \n")
+        print("-------")
+        print("Start Training")
+        print("-------")
 
     # Define Loss function
     loss_dict = {
         "logitnorm": LogitNormLoss(),
         "dropout": CrossEntropyLoss(),
+        "EBO": CrossEntropyLoss(),
     }
     loss_function = loss_dict[training_config["OOD_strategy"]]
 
     # Set up directionary to save the results
-    if verbose == "True":
+    if verbose:
         print("Set up direcionary and environment")
     if not os.path.exists(main_config["output_dir"] + main_config["name"] + "/"):
         os.mkdir(main_config["output_dir"] + main_config["name"] + "/")
 
     # Define the dataset
-    DataLoader, __, __ = load_dataset(config_file)
+    DataLoader= load_dataset(config_file, train = True)
     n_classes = DataLoader.n_classes()
     n_features = DataLoader.n_features()
-
+        
     # Define network
-    network = load_network(config_file, n_classes, n_features)
+    network = load_network(config_file, n_features,  n_classes)
 
     # Define model
-    if verbose == "True":
-        print("Start training")  # optional: progress bar
     model = LitBasicNN(
         network, loss_function, training_config["learning_rate"], n_classes
     )
@@ -268,14 +274,21 @@ def train_step(config_file, train_test_together=False):
         enable_progress_bar=False,
         accelerator=training_config["accelerator"],
         devices=training_config["devices"],
+        log_every_n_steps=2
     )
     trainer.fit(model, DataLoader)
+    if verbose:
+        DataLoader.display_data_characteristics()
+        print('n_classes', n_classes)
+        print('n_features', n_features)
+        print(' \n')
+        print("Training complete")
 
     if train_test_together:
-        return model
+        return model, DataLoader
 
 
-def test_step(config_file, model):
+def test_step(config_file, model, dataset):
     """
     model can be or path to save checkpoint or an actual model
     """
@@ -284,14 +297,17 @@ def test_step(config_file, model):
         config_file
     )
     verbose = main_config["verbose"]
-
+    if verbose:
+        print("-------")
+        print("Start Testing")
+        print("-------")
     # Define the dataset
-    if verbose == "True":
-        print("Read in model and set up analysis")
-    dataset, OOD_label_dataset, OOD_label_celltype = load_dataset(config_file)
+    if verbose:
+        print("Reading in model and setting up the analysis")
+    __ , OOD_label_dataset, OOD_label_celltype = load_dataset(config_file, train= False)
     # TODO change config creation based on new datasets
-    test_X = dataset.test_dataloader().data
-    y_true = dataset.test_dataloader().labels
+    test_X = dataset.data_test.data
+    y_true = dataset.data_test.labels
 
     # load model
     if type(model) is str:
@@ -299,7 +315,7 @@ def test_step(config_file, model):
         model = LitBasicNN.load_from_checkpoint(model)
 
     # load network
-    network = model.return_net()
+    network = model.NN
 
     # Logger
     Logger = TensorBoardLogger(
@@ -327,22 +343,6 @@ def test_step(config_file, model):
         network, test_X
     )  # conf is the score of the prediction, scores returns everything
 
-    # Trainer
-    # trainer = Trainer(
-    #     max_epochs=training_config["max_epochs"],
-    #     logger=Logger,
-    #     callbacks=callbacks_list,
-    #     default_root_dir=main_config["output_dir"] + main_config["name"] + "/",
-    #     enable_progress_bar=False,
-    #     accelerator=training_config["accelerator"],
-    #     devices=training_config["devices"],
-    # )
-
-    # # Test
-    # if verbose == "True":
-    #     print("Start testing")
-    # trainer.test(model, datamodule=dataset)
-
     # # predict
     # if verbose == "True":
     #     print("Start predicting")
@@ -350,19 +350,29 @@ def test_step(config_file, model):
 
     # Calculate statistics
     results_dict = {}
+    if verbose:
+        print(' \n')
+        print('Evaluating OOD dataset')
+    print(np.unique(pred.detach().numpy()))
+    print(np.unique(y_true.detach().numpy()))
     results_dict = evaluate_OOD(
-        conf, pred, ytrue, OOD_label_dataset, "dataset", results_dict
+        conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
     )
 
-    if not np.isnan(OOD_label_celltype.iloc[0, 0]):
+    if verbose:
+        print(' \n')
+        print('Evaluating OOD celltypes')
+
+    if not np.isnan(OOD_label_celltype.iloc[0,0]):
         results_dict = evaluate_OOD(
-            conf, pred, ytrue, OOD_label_celltype, "celltype", results_dict
+            conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
         )
     else:
         results_dict["celltype"] = None
-        print("No OOD celltypes, so no celltype analysis")
+        if verbose:
+            print("No OOD celltypes, so no celltype analysis")
 
-    R = accuracy_reject_curves(conf, ytrue, pred)
+    R = accuracy_reject_curves(conf.detach().numpy(), y_true.detach().numpy(), pred.detach().numpy())
     plot_AR_curves(
         R,
         main_config["output_dir"]
@@ -384,12 +394,28 @@ def test_step(config_file, model):
         results_dict,
         main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
     )
+    
+    # Trainer
+    trainer = Trainer(
+        max_epochs=training_config["max_epochs"],
+        logger=Logger,
+        callbacks=callbacks_list,
+        default_root_dir=main_config["output_dir"] + main_config["name"] + "/",
+        enable_progress_bar=False,
+        accelerator=training_config["accelerator"],
+        devices=training_config["devices"],
+        log_every_n_steps=2
+    )
+    # Test
+    
+    trainer.test(model, datamodule=dataset)
 
+    if verbose:
+        print("Testing complete")
     return (
         scores,
-        conf,
-        model.ytrue.cpu().numpy(),
-        model.predictions.cpu().numpy(),
+        y_true,
+        pred,
     )
 
 
@@ -415,7 +441,7 @@ def save_dict_to_json(d_results, name_analysis):
 
 def save_numpy_array(obj, file_dir):
     if torch.is_tensor(obj):
-        obj = obj.numpy()
+        obj = obj.detach().numpy()
 
     df = pd.DataFrame(obj)
     df.to_csv(file_dir)
@@ -440,8 +466,9 @@ if args.Run_step == "train":
     start = time.time()
     train_step(args.config_file)
     end = time.time()
-    if main_config["verbose"] == "True":
+    if main_config["verbose"]:
         print("Total training time", end - start)
+        print(" \n")
 
 elif args.Run_step == "test":
     start = time.time()
@@ -449,8 +476,9 @@ elif args.Run_step == "test":
         args.config_file, main_config["output_dir"] + args.filename
     )
     end = time.time()
-    if main_config["verbose"] == "True":
+    if main_config["verbose"]:
         print("Total OOD testing time", end - start)
+        print(" \n")
 
     # Saving
     save_numpy_array(
@@ -467,17 +495,19 @@ elif args.Run_step == "test":
 elif args.Run_step == "all":
     # Training
     start = time.time()
-    model = train_step(args.config_file, train_test_together=True)
+    model, dataset = train_step(args.config_file, train_test_together=True)
     end = time.time()
-    if main_config["verbose"] == "True":
+    if main_config["verbose"]:
         print("Total training time", end - start)
+        print(" \n")
 
     # Testing
     start = time.time()
-    scores, ytrue, predictions = test_step(args.config_file, model)
+    scores, ytrue, predictions = test_step(args.config_file, model, dataset)
     end = time.time()
-    if main_config["verbose"] == "True":
+    if main_config["verbose"]:
         print("Total OOD testing time", end - start)
+        print(" \n")
 
     # Saving
     save_numpy_array(

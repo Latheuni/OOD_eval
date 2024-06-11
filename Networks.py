@@ -14,7 +14,6 @@ class LinearNetwork(nn.Sequential):  # Deep Linear network
             dims = [input_dim] + nodes_per_layer + [output_dim]
         else:
             dims = [input_dim] + num_hidden_layers * [nodes_per_layer] + [output_dim]
-
         self.predictor = nn.ModuleList()
         for i in range(0, num_hidden_layers + 1):
             self.predictor.append(nn.Linear(dims[i], dims[i + 1]))

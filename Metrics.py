@@ -18,16 +18,38 @@ def general_metrics(OOD_ind, predictions, ytrue, verbose):
     """
     Calculated ID and OOD accuracy score and balanced accuracy score
     """
+    print(OOD_ind)
     if not isinstance(OOD_ind, np.ndarray):
         OOD_ind = np.array(OOD_ind)
         if verbose:
             print("Converted OOD_ind", OOD_ind)
 
-    OOD_pred = pd.DataFrame(predictions).iloc[convert_ind(OOD_ind), :]
-    ID_pred = pd.DataFrame(predictions).iloc[~convert_ind(OOD_ind), :]
-    OOD_ytrue = pd.DataFrame(ytrue).iloc[convert_ind(OOD_ind), :]
-    ID_ytrue = pd.DataFrame(ytrue).iloc[~convert_ind(OOD_ind), :]
+    if isinstance(OOD_ind[0], bool):
+        OOD_pred = pd.DataFrame(predictions).iloc[convert_ind(OOD_ind)]
+        ID_pred = pd.DataFrame(predictions).iloc[~convert_ind(OOD_ind)]
+        OOD_ytrue = pd.DataFrame(ytrue).iloc[convert_ind(OOD_ind)]
+        ID_ytrue = pd.DataFrame(ytrue).iloc[~convert_ind(OOD_ind)]
+    else:
+        OOD_ind = [True if i == -1 else False for i in OOD_ind]
+        OOD_pred = predictions[OOD_ind]
+        ID_pred = predictions[np.invert(OOD_ind)]
+        OOD_ytrue = ytrue[OOD_ind]
+        ID_ytrue = ytrue[np.invert(OOD_ind)]
 
+    print(type(predictions))
+    print(len(predictions))
+    print(len(ytrue))
+    print(len(OOD_pred))
+    print(len(ID_pred))
+    print(len(OOD_ytrue))
+    print(len(ID_ytrue))
+    print('---')
+    print(np.unique(OOD_pred))
+
+    print(np.unique(ID_pred))
+    print(np.unique(OOD_ytrue))
+    print(np.unique(ID_ytrue))
+    print(metrics.accuracy_score(OOD_ytrue, OOD_pred))
     return (
         metrics.accuracy_score(OOD_ytrue, OOD_pred),
         metrics.accuracy_score(ID_ytrue, ID_pred),
@@ -77,7 +99,8 @@ def auc_and_fpr_recall(conf, label, tpr_th):
     # following convention in ML we treat OOD as positive
     ood_indicator = np.zeros_like(label)
     ood_indicator[label == -1] = 1
-
+    print(ood_indicator)
+    print(conf)
     # in the postprocessor we assume ID samples will have larger
     # "conf" values than OOD samples
     # therefore here we need to negate the "conf" values

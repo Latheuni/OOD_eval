@@ -6,10 +6,8 @@ from torch import nn
 # Adapted from code OpenOOD
 # NOTE to self: post processing is something completely different from testing/predicting
 class base_postprocessor:
-    def __init__(self, config):
-        self.config = config
 
-    def postprocess(self, net: nn.Module, data: Any):
+    def postprocess(self, net, data):
         output = net(data)
         scores = torch.softmax(output, dim=1)
         conf, pred = torch.max(scores, dim=1)
@@ -17,8 +15,7 @@ class base_postprocessor:
 
 
 class dropout_postprocessor:
-    def __init__(self, config, dropout_times):
-        self.config = config
+    def __init__(self, dropout_times = 10):
         self.dropout_times = dropout_times
 
     def postprocess(self, net, data):

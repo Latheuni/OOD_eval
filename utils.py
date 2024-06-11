@@ -46,7 +46,7 @@ def create_config(
     activation="relu",
     OOD_strategy="logitnorm",
     learning_rate=1e-04,
-    max_epochs=150,
+    max_epochs=350,
     accelerator="gpu",
     devices=1,
 ):
@@ -250,7 +250,7 @@ def load_network(config_file, n_features, n_classes):
         )
     else:
         if (
-            training_config["OOD strategy"] == "dropout"
+            training_config["OOD_strategy"] == "dropout"
         ):  # loss should be cross-entropy
             network = DropoutNetwork(
                 n_features,
@@ -277,10 +277,10 @@ def evaluate_OOD(
     or "celltypes"
     """
     auroc_dataset, aupr_in_dataset, aupr_out_dataset, fpr_dataset = (
-        auc_and_fpr_recall(conf, OOD_label_dataset.iloc[:, 0], 0.95)
+        auc_and_fpr_recall(conf, OOD_ind, 0.95)
     )
     acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(
-        OOD_ind.iloc[:, 0].values,
+        OOD_ind,
         pred,
         ytrue,
         verbose,
