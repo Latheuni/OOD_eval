@@ -132,7 +132,7 @@ class LitBasicNN(L.LightningModule):
         )  # on_epoch acculumate and rduces all metric to the end of the epoch, on_step that specific call will not accumulate metrics
         self.train_accuracy(scores, y)
         self.log("training accuracy", self.train_accuracy, on_step=True)
-        return loss
+        return loss # necessary o, ùpdule
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
@@ -159,7 +159,7 @@ class LitBasicNN(L.LightningModule):
         self.log("test balanced accuracy", self.test_balanced_accuracy, on_step=True)
         if batch_idx == 0:
             self.ytrue = y
-            self.scores = scores  # Unsure if this is correct: check!
+            self.scores = scores 
         else:
             self.ytrue = torch.cat((self.ytrue, y), 0)
             self.scores = torch.cat((self.scores, scores), 0)
@@ -186,6 +186,7 @@ class LitBasicNN(L.LightningModule):
             self.parameters(), lr=float(self.lr)
         )  # can still add weight decay
 
+        # Don't use a lr_scheduler, does not improve results
         #lr_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(
         #    optimizer, lr_lambda=lambd
         #)
@@ -193,12 +194,12 @@ class LitBasicNN(L.LightningModule):
 
 
 def train_step(config_file, train_test_together=False):
-  
     # Read in parameters
     main_config, dataset_config, network_config, training_config = read_config(
         config_file
     )
     verbose = main_config["verbose"]
+
     if verbose:
         print(" \n")
         print("-------")
@@ -216,6 +217,7 @@ def train_step(config_file, train_test_together=False):
     # Set up directionary to save the results
     if verbose:
         print("Set up direcionary and environment")
+
     if not os.path.exists(main_config["output_dir"] + main_config["name"] + "/"):
         os.mkdir(main_config["output_dir"] + main_config["name"] + "/")
 
@@ -238,22 +240,16 @@ def train_step(config_file, train_test_together=False):
     )
 
     # Define callbacks
-    checkpoint_train = ModelCheckpoint(
-        monitor="train_loss",
-        dirpath=main_config["output_dir"] + main_config["name"] + "/",
-        filename=main_config["name"] + "_train_loss",
-    )
     checkpoint_val = ModelCheckpoint(
         monitor="val_loss",
         dirpath=main_config["output_dir"] + main_config["name"] + "/",
-        filename=main_config["name"] + "_val_loss",
+        filename=main_config["name"] + "best_model",
     )
     device_stats = DeviceStatsMonitor()
     lr_monitor = LearningRateMonitor(logging_interval="step")
     earlystopping = EarlyStopping(monitor="val_loss", mode="min")  # for cross-entropy
     callbacks_list = [
         checkpoint_val,
-        checkpoint_train,
         earlystopping,
         lr_monitor,
         device_stats,
@@ -277,6 +273,7 @@ def train_step(config_file, train_test_together=False):
         log_every_n_steps=2
     )
     trainer.fit(model, DataLoader)
+
     if verbose:
         DataLoader.display_data_characteristics()
         print('n_classes', n_classes)
@@ -285,10 +282,10 @@ def train_step(config_file, train_test_together=False):
         print("Training complete")
 
     if train_test_together:
-        return model, DataLoader
+        return trainer, DataLoader #Unsure that this is the best model
 
 
-def test_step(config_file, model, dataset):
+def test_step(config_file, trainer, dataset):
     """
     model can be or path to save checkpoint or an actual model
     """
@@ -297,25 +294,24 @@ def test_step(config_file, model, dataset):
         config_file
     )
     verbose = main_config["verbose"]
+
     if verbose:
         print("-------")
         print("Start Testing")
         print("-------")
+
     # Define the dataset
     if verbose:
         print("Reading in model and setting up the analysis")
     __ , OOD_label_dataset, OOD_label_celltype = load_dataset(config_file, train= False)
-    # TODO change config creation based on new datasets
     test_X = dataset.data_test.data
     y_true = dataset.data_test.labels
-
-    # load model
-    if type(model) is str:
-        os.chdir(main_config["output_dir"] + main_config["name"] + "/")
-        model = LitBasicNN.load_from_checkpoint(model)
+    
+    # load model from best checkpoint
+    model =  LitBasicNN.load_from_checkpoint(filename=main_config["name"] + "best_model")
 
     # load network
-    network = model.NN
+    network = model.NN 
 
     # Logger
     Logger = TensorBoardLogger(
@@ -323,14 +319,9 @@ def test_step(config_file, model, dataset):
     )
 
     # Define callbacks
-    checkpoint_test = ModelCheckpoint(
-        monitor="test_loss",
-        dirpath=main_config["output_dir"] + main_config["name"] + "/",
-        filename=main_config["name"] + "_test_loss_" + "{epoch}",
-    )
     pred_writer = CustomWriter(main_config)
     device_stats = DeviceStatsMonitor()
-    callbacks_list = [checkpoint_test, pred_writer, device_stats]
+    callbacks_list = [pred_writer, device_stats]
 
     # PostProcess
     postprocessor_dict = {
@@ -353,8 +344,7 @@ def test_step(config_file, model, dataset):
     if verbose:
         print(' \n')
         print('Evaluating OOD dataset')
-    print(np.unique(pred.detach().numpy()))
-    print(np.unique(y_true.detach().numpy()))
+
     results_dict = evaluate_OOD(
         conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
     )
@@ -395,20 +385,7 @@ def test_step(config_file, model, dataset):
         main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
     )
     
-    # Trainer
-    trainer = Trainer(
-        max_epochs=training_config["max_epochs"],
-        logger=Logger,
-        callbacks=callbacks_list,
-        default_root_dir=main_config["output_dir"] + main_config["name"] + "/",
-        enable_progress_bar=False,
-        accelerator=training_config["accelerator"],
-        devices=training_config["devices"],
-        log_every_n_steps=2
-    )
-    # Test
-    
-    trainer.test(model, datamodule=dataset)
+    scores, y = trainer.test(model, datamodule=dataset, ckpt_path = "best")
 
     if verbose:
         print("Testing complete")

@@ -112,9 +112,7 @@ class LitLungDataModule(L.LightningDataModule):
             idx_keep = [l not in celltype_to_filter for l in labels.values]
             return (data[idx_keep, :], labels.iloc[idx_keep])
         else:
-            print('Error with the type of labels, which is:', type(labels))
-
-       
+            print('Error with the type of labels, which is:', type(labels)) 
 
     def prepare_data(self):
         """Read in the Data"""
@@ -134,7 +132,7 @@ class LitLungDataModule(L.LightningDataModule):
             if not hasattr(self, "patients_ID"):
                 self.patients_ID = np.unique(obs_patient["batch"])
 
-            current_sc = int(self.scenario.split("_")[1])
+            current_sc = int(self.scenario.split("_")[1]) -1
 
             # Read in OOD data
             X_OOD = data_patient[
@@ -233,8 +231,9 @@ class LitLungDataModule(L.LightningDataModule):
             data_filter_train_val, obs_filter_train_val = self.filter_counts_h5ad(
                 data_train_val, obs_train_val, self.min_celltypes
             )
-            if verbose == "True":
+            if self.verbose == "True":
                 print('Distribution labels train-val', obs_filter_train_val["cell_type"].value_counts())
+           
             X_train, X_val_test, y_train_, y_val_test = train_test_split(
                 data_filter_train_val,
                 obs_filter_train_val["cell_type"],
@@ -242,8 +241,9 @@ class LitLungDataModule(L.LightningDataModule):
                 stratify= obs_filter_train_val["cell_type"].values,
                 random_state=0,
             )
-            if verbose == "True":
+            if self.verbose == "True":
                 print('Distribution labels val-test', y_val_test.value_counts())
+            
             X_val, X_test, y_val_, y_test = train_test_split(
                 X_val_test,
                 y_val_test,
@@ -251,7 +251,6 @@ class LitLungDataModule(L.LightningDataModule):
                 stratify=y_val_test.values,
                 random_state=0,
             )
-            
             
             # Convert train and val to torch plus convert str labels to int
             y_train = [self.conversion_dict[i] for i in y_train_.values]
@@ -271,7 +270,7 @@ class LitLungDataModule(L.LightningDataModule):
             X_OOD, y_OOD = self.filter_counts_h5ad(
                 data_OOD, obs_OOD, self.min_celltypes
             )
-            if verbose == "True":
+            if self.verbose == "True":
                 print('Distribution labels OOD', y_OOD.value_counts())
 
             # Convert test ID and OOD data to dense and concatenate
@@ -358,7 +357,7 @@ class LitLungDataModule(L.LightningDataModule):
 
             if self.verbose == "True":
                 print(' \n')
-                print('Distribution labels train-val', y_train_val.value_counts())
+                print('Distribution labels train-val', y_train_.value_counts())
                 print('Distribution labels OOD', y_OOD.value_counts())
                 print('Distribution val-test', y_val_test.value_counts())
                 print(' \n')
@@ -446,7 +445,6 @@ class LitLungDataModule(L.LightningDataModule):
         # if not os.path.exists(
         #     self.data_dir + "OOD_ind_lung" + "_celltype_" + str(self.name) + ".csv"
         # ):
-        print(OOD_ind)
         OOD_ind.to_csv(
             self.data_dir
             + "OOD_ind_lung"
@@ -456,7 +454,7 @@ class LitLungDataModule(L.LightningDataModule):
         )
 
     def train_dataloader(self):
-        return DataLoader(self.data_train, batch_size=self.batch, num_workers=self.cpus)
+        return DataLoader(self.data_train, batch_size=self.batch, num_workers=self.cpus, shuffle = True)
 
     def val_dataloader(self):
         return DataLoader(self.data_val, batch_size=self.batch, num_workers=self.cpus)
@@ -593,27 +591,26 @@ class LitImmuneDataModule(L.LightningDataModule):
             obs_patient = self.obs.iloc[self.obs["study"].values == "Sun",:]
             data_patient = self.data[self.obs["study"].values == "Sun",:]
 
-            
             if not hasattr(self, "patients_ID"):
                 self.patients_ID = np.unique(obs_patient["batch"])
 
-            current_sc = int(self.scenario.split("_")[1])
+            current_sc = int(self.scenario.split("_")[1])-1
 
             # Read in OOD data
-            X_OOD = data_patient_filter[
-                obs_patient_filter["batch"].values == self.patients_ID[current_sc]
+            X_OOD = data_patient[
+                obs_patient["batch"].values == self.patients_ID[current_sc]
             ]
 
-            y_OOD = obs_patient_filter.iloc[
-                obs_patient_filter["batch"].values == self.patients_ID[current_sc],:
+            y_OOD = obs_patient.iloc[
+                obs_patient_["batch"].values == self.patients_ID[current_sc],:
             ]["final_annotation"]
 
             # Read in train_val(_test) data (= ID data)
-            X_train_val = data_patient_filter[
-                obs_patient_filter["batch"].values != self.patients_ID[current_sc]
+            X_train_val = data_patient[
+                obs_patient["batch"].values != self.patients_ID[current_sc]
             ]
-            y_train_val = obs_patient_filter.iloc[
-                obs_patient_filter["batch"].values != self.patients_ID[current_sc],:
+            y_train_val = obs_patient.iloc[
+                obs_patient["batch"].values != self.patients_ID[current_sc],:
             ]["final_annotation"]
 
             # filter all data
@@ -623,9 +620,6 @@ class LitImmuneDataModule(L.LightningDataModule):
             X_OOD,  y_OOD = self.filter_counts_h5ad(
                  X_OOD, y_OOD, self.min_celltypes
             )
-            print('train-val', y_train_val.value_counts())
-            
-            print('OOD', y_OOD.value_counts())
 
             # Split "ID" data
             X_train, X_val_test, y_train_, y_val_test = train_test_split(
@@ -635,8 +629,7 @@ class LitImmuneDataModule(L.LightningDataModule):
                 stratify=y_train_val.values,
                 random_state=0,
             )
-            
-            print('val-test', y_val_test.value_counts())    
+
             X_val, X_test, y_val_, y_test = train_test_split(
                 X_val_test,
                 y_val_test,
@@ -741,7 +734,7 @@ class LitImmuneDataModule(L.LightningDataModule):
             
             if self.verbose == "True":
                 print(' \n')
-                print('Distribution labels train-val', y_train_val.value_counts())
+                print('Distribution labels train-val', y_train_.value_counts())
                 print('Distribution labels OOD', y_OOD.value_counts())
                 print('Distribution val-test', y_val_test.value_counts())
                 print(' \n')
@@ -805,16 +798,16 @@ class LitImmuneDataModule(L.LightningDataModule):
             data_test = torch.from_numpy(X_test.todense())
             y_test_ = [self.conversion_dict[i] for i in y_test.values]
             labels_test = torch.from_numpy(np.array(y_test_))
+            
             data_OOD = torch.from_numpy(X_OOD.todense())
             self.data_OOD = data_OOD
             y_OOD_ = [self.conversion_dict[i] for i in y_OOD['final_annotation'].values]
             labels_OOD = torch.from_numpy(np.array(y_OOD_))
             data_test_total = torch.cat((data_test, data_OOD), 0)
             labels_test_total = torch.cat((labels_test, labels_OOD), 0)
-            
             if self.verbose == "True":
                 print(' \n')
-                print('Distribution labels train-val', y_train_val.value_counts())
+                print('Distribution labels train-val', y_train_.value_counts())
                 print('Distribution labels OOD', y_OOD.value_counts())
                 print('Distribution val-test', y_val_test.value_counts())
                 print(' \n')
@@ -823,6 +816,7 @@ class LitImmuneDataModule(L.LightningDataModule):
             OOD_ind = pd.DataFrame(
             [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
             )
+            self.OOD_ind = OOD_ind
             if not os.path.exists(
             self.data_dir + "OOD_ind_immune" + "_dataset_" + str(self.name) + ".csv"
             ):
@@ -869,7 +863,7 @@ class LitImmuneDataModule(L.LightningDataModule):
         return ind, idx_OOD
 
     def setup(self,stage):
-        """General Datas setup"""
+        """General Data setup"""
         # Data setup train
         X_train, X_val, X_test, y_train, y_val, y_test = self.pick_scenario()
         self.X_train = X_train
@@ -912,7 +906,7 @@ class LitImmuneDataModule(L.LightningDataModule):
         )
 
     def train_dataloader(self):
-        return DataLoader(self.data_train, batch_size=self.batch, num_workers=self.cpus)
+        return DataLoader(self.data_train, batch_size=self.batch, num_workers=self.cpus, shuffle = True)
 
     def val_dataloader(self):
         return DataLoader(self.data_val, batch_size=self.batch, num_workers=self.cpus)
@@ -1173,7 +1167,7 @@ class LitPancreasDataModule(L.LightningDataModule):
         self.data_test = BaseDataset(data_test_total, labels_test_total)
 
     def train_dataloader(self):
-        return DataLoader(self.data_train, batch_size=self.batch, num_workers=self.cpus)
+        return DataLoader(self.data_train, batch_size=self.batch, num_workers=self.cpus, shuffle = True)
 
     def val_dataloader(self):
         return DataLoader(self.data_val, batch_size=self.batch, num_workers=self.cpus)
