@@ -68,7 +68,7 @@ class DropoutNetwork(nn.Sequential):
         return x
 
 
-class NonLinearNetwork(nn.Sequential):  # Deep Linear network
+class NonLinearNetwork(nn.Sequential, return_feature = False):  # Deep Linear network
     def __init__(
         self,
         input_dim,
@@ -107,6 +107,12 @@ class NonLinearNetwork(nn.Sequential):  # Deep Linear network
                     self.predictor.append(nn.GELU())
 
     def forward(self, x):
-        for i, l in enumerate(self.predictor):
-            x = l(x)
-        return x
+        print('check return feature', self.predictor[:-1])
+        for i, l in enumerate(self.predictor[:-1]):
+            x = l(x) #outputs last hidden states
+        x_scores = self.predictor[-1](x) 
+        print('check return feature', self.predictor[-1])
+        if return_feature:
+            return x_scores, x
+        else:
+            return x_scores

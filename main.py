@@ -19,9 +19,6 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     DeviceStatsMonitor,
 )
-from torchmetrics.classification import (
-    Accuracy,
-)  # MultiClassAccuracy in newer versions of lightning (here 0.9.3)
 from pytorch_lightning.cli import LightningCLI
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -49,8 +46,8 @@ from Metrics import (
     auc_and_fpr_recall,
     plot_AR_curves,
 )
-from Post_processors import base_postprocessor, dropout_postprocessor, EBO_postprocessor
-
+from Post_processors import base_postprocessor, dropout_postprocessor, EBO_postprocessor, Ensemble_postprocessor
+from LModule import *
 
 # Code
 ## basic module
@@ -79,120 +76,6 @@ class CustomWriter(BasePredictionWriter):
     def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
         torch.save(predictions, os.path.join(self.output_dir, "predictions.pt"))
 
-
-class LitBasicNN(L.LightningModule):
-    def __init__(self, NN, loss_function, learning_rate, n_classes, decay=0.95):
-        super().__init__()
-        self.NN = NN
-        self.loss_function = loss_function
-        self.lr = learning_rate
-        self.decay = decay
-
-        if torchmetrics.__version__ > "0.9.3":
-            self.accuracy = MulticlassAccuracy(
-                num_classes=n_classes, average="micro"
-            )  # is not callable
-            self.balanced_accuracy = MulticlassAccuracy(
-                num_classes=n_classes, average="macro"
-            )
-            self.train_accuracy = MulticlassAccuracy(
-                num_classes=n_classes, average="micro"
-            )
-            self.val_accuracy = MulticlassAccuracy(
-                num_classes=n_classes, average="micro"
-            )
-            self.test_accuracy = MulticlassAccuracy(
-                num_classes=n_classes, average="micro"
-            )
-            self.val_balanced_accuracy = MulticlassAccuracy(
-                num_classes=n_classes, average="macro"
-            )
-            self.test_balanced_accuracy = MulticlassAccuracy(
-                num_classes=n_classes, average="macro"
-            )
-        else:
-            self.train_accuracy = Accuracy(num_classes=n_classes, average="micro")
-            self.val_accuracy = Accuracy(num_classes=n_classes, average="micro")
-            self.test_accuracy = Accuracy(num_classes=n_classes, average="micro")
-            self.val_balanced_accuracy = Accuracy(
-                num_classes=n_classes, average="macro"
-            )
-            self.test_balanced_accuracy = Accuracy(
-                num_classes=n_classes, average="macro"
-            )
-        self.save_hyperparameters()
-
-    def training_step(self, batch, batch_idx):
-        x, y = batch
-        scores = self.NN(x)
-        loss = self.loss_function(scores, y)
-        scores = F.softmax(scores, dim=-1)
-        self.log(
-            "train_loss", loss, on_step=True
-        )  # on_epoch acculumate and rduces all metric to the end of the epoch, on_step that specific call will not accumulate metrics
-        self.train_accuracy(scores, y)
-        self.log("training accuracy", self.train_accuracy, on_step=True)
-        return loss # necessary o, ùpdule
-
-    def validation_step(self, batch, batch_idx):
-        x, y = batch
-        scores = self.NN(x)
-        val_loss = self.loss_function(scores, y)
-        scores = F.softmax(scores, dim=-1)
-        self.log("val_loss", val_loss, on_step=True)
-        self.val_accuracy(scores, y)
-        self.val_balanced_accuracy(scores, y)
-        self.log("validation accuracy", self.val_accuracy, on_step=True)
-        self.log(
-            "validation balanced accuracy", self.val_balanced_accuracy, on_step=True
-        )
-
-    def test_step(self, batch, batch_idx):
-        x, y = batch
-        scores = self.NN(x)
-        test_loss = self.loss_function(scores, y)
-        scores = F.softmax(scores, dim=-1)
-        self.log("test_loss", test_loss, on_step=True)
-        self.test_accuracy(scores, y)
-        self.test_balanced_accuracy(scores, y)
-        self.log("test accuracy", self.test_accuracy, on_step=True)
-        self.log("test balanced accuracy", self.test_balanced_accuracy, on_step=True)
-        if batch_idx == 0:
-            self.ytrue = y
-            self.scores = scores 
-        else:
-            self.ytrue = torch.cat((self.ytrue, y), 0)
-            self.scores = torch.cat((self.scores, scores), 0)
-        return scores, y
-
-    def predict_step(
-        self, batch, batch_idx
-    ):  # Loss needs to be minimized, max scores are correct label
-        x, y = batch
-        scores = self.NN(x)
-        scores = F.softmax(scores, dim=-1)
-        if batch_idx == 0:
-            self.predictions = torch.argmax(scores, dim=1)
-        else:
-            self.predictions = torch.cat(
-                (self.predictions, torch.argmax(scores, dim=1)), 0
-            )
-        return torch.argmax(scores, dim=1)
-
-    def configure_optimizers(self):
-        lambd = lambda epoch: self.decay
-        
-        optimizer = torch.optim.Adam(
-            self.parameters(), lr=float(self.lr)
-        )  # can still add weight decay
-
-        # Don't use a lr_scheduler, does not improve results
-        #lr_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(
-        #    optimizer, lr_lambda=lambd
-        #)
-        return optimizer
-
-
 def train_step(config_file, train_test_together=False):
     # Read in parameters
     main_config, dataset_config, network_config, training_config = read_config(
@@ -211,6 +94,8 @@ def train_step(config_file, train_test_together=False):
         "logitnorm": LogitNormLoss(),
         "dropout": CrossEntropyLoss(),
         "EBO": CrossEntropyLoss(),
+        "Ensembles": CrossEntropyLoss(),
+        "Knn": CrossEntropyLoss(),
     }
     loss_function = loss_dict[training_config["OOD_strategy"]]
 
@@ -225,54 +110,91 @@ def train_step(config_file, train_test_together=False):
     DataLoader= load_dataset(config_file, train = True)
     n_classes = DataLoader.n_classes()
     n_features = DataLoader.n_features()
-        
-    # Define network
-    network = load_network(config_file, n_features,  n_classes)
+    
+    if training_config["OOD_strategy"] == "Ensembles":
+        for i in range(0, 10):
+            # Define network
+            network = load_network(config_file, n_features,  n_classes)
 
-    # Define model
-    model = LitBasicNN(
-        network, loss_function, training_config["learning_rate"], n_classes
-    )
+            # Define model
+            model = LitBasicNN(
+                network, loss_function, training_config["learning_rate"], n_classes
+            )
 
-    # Logger
-    Logger = TensorBoardLogger(
-        main_config["output_dir"] + "tb_logger/", name=main_config["name"]
-    )
+            # Logger
+            Logger = TensorBoardLogger(
+                main_config["output_dir"] + "tb_logger/", name=main_config["name"]
+            )
 
-    # Define callbacks
-    checkpoint_val = ModelCheckpoint(
-        monitor="val_loss",
-        dirpath=main_config["output_dir"] + main_config["name"] + "/",
-        filename=main_config["name"] + "best_model",
-    )
-    device_stats = DeviceStatsMonitor()
-    lr_monitor = LearningRateMonitor(logging_interval="step")
-    earlystopping = EarlyStopping(monitor="val_loss", mode="min")  # for cross-entropy
-    callbacks_list = [
-        checkpoint_val,
-        earlystopping,
-        lr_monitor,
-        device_stats,
-    ]
+            # Define callbacks
+            checkpoint_val = ModelCheckpoint(
+                monitor="val_loss",
+                dirpath=main_config["output_dir"] + main_config["name"] + "/EnsembleModels/" ,
+                filename=main_config["name"] +'_' + str(i) + "_best_model",
+            )
+            device_stats = DeviceStatsMonitor()
+            lr_monitor = LearningRateMonitor(logging_interval="step")
+            earlystopping = EarlyStopping(monitor="val_loss", mode="min")  # for cross-entropy
+            callbacks_list = [
+                checkpoint_val,
+                earlystopping,
+                lr_monitor,
+                device_stats,
+            ]
 
-    # Train and validate model
-    if main_config["debug"] == "True":
-        debug = True
+            trainer = Trainer(
+                max_epochs=training_config["max_epochs"],
+                logger=Logger,
+                callbacks=callbacks_list,
+                default_root_dir=main_config["output_dir"] + main_config["name"] + "/",
+                enable_progress_bar=False,
+                accelerator=training_config["accelerator"],
+                devices=training_config["devices"],
+                log_every_n_steps=2
+            )
+            trainer.fit(model, DataLoader)
+
     else:
-        debug = False
+        # Define network
+        network = load_network(config_file, n_features,  n_classes)
 
-    trainer = Trainer(
-        fast_dev_run=debug,
-        max_epochs=training_config["max_epochs"],
-        logger=Logger,
-        callbacks=callbacks_list,
-        default_root_dir=main_config["output_dir"] + main_config["name"] + "/",
-        enable_progress_bar=False,
-        accelerator=training_config["accelerator"],
-        devices=training_config["devices"],
-        log_every_n_steps=2
-    )
-    trainer.fit(model, DataLoader)
+        # Define model
+        model = LitBasicNN(
+            network, loss_function, training_config["learning_rate"], n_classes
+        )
+
+        # Logger
+        Logger = TensorBoardLogger(
+            main_config["output_dir"] + "tb_logger/", name=main_config["name"]
+        )
+
+        # Define callbacks
+        checkpoint_val = ModelCheckpoint(
+            monitor="val_loss",
+            dirpath=main_config["output_dir"] + main_config["name"] + "/",
+            filename=main_config["name"] + "_best_model",
+        )
+        device_stats = DeviceStatsMonitor()
+        lr_monitor = LearningRateMonitor(logging_interval="step")
+        earlystopping = EarlyStopping(monitor="val_loss", mode="min")  # for cross-entropy
+        callbacks_list = [
+            checkpoint_val,
+            earlystopping,
+            lr_monitor,
+            device_stats,
+        ]
+
+        trainer = Trainer(
+            max_epochs=training_config["max_epochs"],
+            logger=Logger,
+            callbacks=callbacks_list,
+            default_root_dir=main_config["output_dir"] + main_config["name"] + "/",
+            enable_progress_bar=False,
+            accelerator=training_config["accelerator"],
+            devices=training_config["devices"],
+            log_every_n_steps=2
+        )
+        trainer.fit(model, DataLoader)
 
     if verbose:
         DataLoader.display_data_characteristics()
@@ -282,7 +204,7 @@ def train_step(config_file, train_test_together=False):
         print("Training complete")
 
     if train_test_together:
-        return trainer, DataLoader #Unsure that this is the best model
+        return trainer, DataLoader 
 
 
 def test_step(config_file, trainer, dataset):
@@ -304,88 +226,159 @@ def test_step(config_file, trainer, dataset):
     if verbose:
         print("Reading in model and setting up the analysis")
     __ , OOD_label_dataset, OOD_label_celltype = load_dataset(config_file, train= False)
+    print('OOD in in main', OOD_label_celltype)
     test_X = dataset.data_test.data
+    print('shape test_X man', test_X.shape)
     y_true = dataset.data_test.labels
     
-    # load model from best checkpoint
-    model =  LitBasicNN.load_from_checkpoint(filename=main_config["name"] + "best_model")
+   
 
-    # load network
-    network = model.NN 
+    if training_config["OOD_strategy"] == "Ensembles":
+        #Postprocess networks
+        postprocessor = Ensemble_postprocessor(main_config["output_dir"] + main_config["name"] + "/EnsembleModels/", main_config["name"] )
+        pred, conf = postprocessor.postprocess(test_X)
+        
+        # Calculate Measures
+        results_dict = {}
+        if verbose:
+            print(' \n')
+            print('Evaluating OOD dataset')
 
-    # Logger
-    Logger = TensorBoardLogger(
-        main_config["output_dir"] + "tb_logger/", name=main_config["name"]
-    )
-
-    # Define callbacks
-    pred_writer = CustomWriter(main_config)
-    device_stats = DeviceStatsMonitor()
-    callbacks_list = [pred_writer, device_stats]
-
-    # PostProcess
-    postprocessor_dict = {
-        "logitnorm": base_postprocessor(),
-        "dropout": dropout_postprocessor(),
-        "EBO": EBO_postprocessor(),
-    }
-    postprocessor = postprocessor_dict[training_config["OOD_strategy"]]
-    pred, conf, scores = postprocessor.postprocess(
-        network, test_X
-    )  # conf is the score of the prediction, scores returns everything
-
-    # # predict
-    # if verbose == "True":
-    #     print("Start predicting")
-    # trainer.predict(model, datamodule=dataset)
-
-    # Calculate statistics
-    results_dict = {}
-    if verbose:
-        print(' \n')
-        print('Evaluating OOD dataset')
-
-    results_dict = evaluate_OOD(
-        conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
-    )
-
-    if verbose:
-        print(' \n')
-        print('Evaluating OOD celltypes')
-
-    if not np.isnan(OOD_label_celltype.iloc[0,0]):
         results_dict = evaluate_OOD(
-            conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
+            conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
+        )
+
+        if verbose:
+            print(' \n')
+            print('Evaluating OOD celltypes')
+
+        if not np.isnan(OOD_label_celltype.iloc[0,0]):
+            results_dict = evaluate_OOD(
+                conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
+            )
+        else:
+            results_dict["celltype"] = None
+            if verbose:
+                print("No OOD celltypes, so no celltype analysis")
+        
+        # Save results
+        save_dict_to_json(
+            results_dict,
+            main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
         )
     else:
-        results_dict["celltype"] = None
-        if verbose:
-            print("No OOD celltypes, so no celltype analysis")
+        # load model from best checkpoint
+        model =  LitBasicNN.load_from_checkpoint(main_config["output_dir"] + main_config["name"] + "/" + main_config["name"] + "_best_model.ckpt")
 
-    R = accuracy_reject_curves(conf.detach().numpy(), y_true.detach().numpy(), pred.detach().numpy())
-    plot_AR_curves(
-        R,
-        main_config["output_dir"]
-        + main_config["name"]
-        + "/"
-        + main_config["name"]
-        + "_AR_plot.png",
-    )
-    R.to_csv(
-        main_config["output_dir"]
-        + main_config["name"]
-        + "/"
-        + main_config["name"]
-        + "_AR.csv"
-    )
-    print("\n")
-    # save results
-    save_dict_to_json(
-        results_dict,
-        main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
-    )
-    
-    scores, y = trainer.test(model, datamodule=dataset, ckpt_path = "best")
+        # load network
+        network = model.NN 
+
+        # Logger
+        Logger = TensorBoardLogger(
+            main_config["output_dir"] + "tb_logger/", name=main_config["name"]
+        )
+
+        # Define callbacks
+        pred_writer = CustomWriter(main_config)
+        device_stats = DeviceStatsMonitor()
+        callbacks_list = [pred_writer, device_stats]
+
+         # PostProcess
+        postprocessor_dict = {
+            "logitnorm": base_postprocessor(),
+            "dropout": dropout_postprocessor(),
+            "EBO": EBO_postprocessor(),
+            "Knn": Knn(),
+        }
+
+        # Implement for Knn a sweep for values of K
+        if training_config["OOD_strategy"] == "Knn":
+            if verbose:
+                print('Start Knn postprocessor sweep:')
+            result_dict = dict()
+            for k in [50,100,200,500,1000]:
+                if verbose:
+                    ('\t ' + str(k))
+                postprocessor = KnnPostprocessor(k)
+                postprocessor.setup(test_x)
+                pred, conf = postprocessor.postprocess(
+                        network, test_X)
+                results_dict_ = {}
+                if verbose:
+                    print(' \n')
+                    print('Evaluating OOD dataset')
+
+                results_dict_ = evaluate_OOD(
+                    conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
+                )
+
+                if verbose:
+                    print(' \n')
+                    print('Evaluating OOD celltypes')
+
+                if not np.isnan(OOD_label_celltype.iloc[0,0]):
+                    results_dict_ = evaluate_OOD(
+                        conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
+                    )
+                else:
+                    results_dict_["celltype"] = None
+                    if verbose:
+                        print("No OOD celltypes, so no celltype analysis")
+                result_dict[k] = results_dict_
+        else:
+            postprocessor = postprocessor_dict[training_config["OOD_strategy"]]
+            
+            pred, conf, scores = postprocessor.postprocess(
+                network, test_X
+            )  # conf is the score of the prediction, scores returns everything
+
+            # Calculate statistics
+            results_dict = {}
+            if verbose:
+                print(' \n')
+                print('Evaluating OOD dataset')
+
+            results_dict = evaluate_OOD(
+                conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
+            )
+
+            if verbose:
+                print(' \n')
+                print('Evaluating OOD celltypes')
+
+            if not np.isnan(OOD_label_celltype.iloc[0,0]):
+                results_dict = evaluate_OOD(
+                    conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
+                )
+            else:
+                results_dict["celltype"] = None
+                if verbose:
+                    print("No OOD celltypes, so no celltype analysis")
+
+            R = accuracy_reject_curves(conf.detach().numpy(), y_true.detach().numpy(), pred.detach().numpy())
+            plot_AR_curves(
+                R,
+                main_config["output_dir"]
+                + main_config["name"]
+                + "/"
+                + main_config["name"]
+                + "_AR_plot.png",
+            )
+            R.to_csv(
+                main_config["output_dir"]
+                + main_config["name"]
+                + "/"
+                + main_config["name"]
+                + "_AR.csv"
+            )
+            print("\n")
+        # save results
+        save_dict_to_json(
+            results_dict,
+            main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
+        )
+        
+        trainer.test(model, datamodule=dataset, ckpt_path = "best")
 
     if verbose:
         print("Testing complete")

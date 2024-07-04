@@ -205,16 +205,13 @@ class LitLungDataModule(L.LightningDataModule):
             OOD_ind = pd.DataFrame(
             [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
             )
-            if not os.path.exists(
-            self.data_dir + "OOD_ind_lung" + "_dataset_" + str(self.name) + ".csv"
-            ):
-                OOD_ind.to_csv(
-                    self.data_dir
-                    + "OOD_ind_lung"
-                    + "_dataset_"
-                    + str(self.name)
-                    + ".csv"
-                )
+            OOD_ind.to_csv(
+                self.data_dir
+                + "OOD_ind_lung"
+                + "_dataset_"
+                + str(self.name)
+                + ".csv"
+            )
 
             return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
@@ -271,7 +268,7 @@ class LitLungDataModule(L.LightningDataModule):
                 data_OOD, obs_OOD, self.min_celltypes
             )
             if self.verbose == "True":
-                print('Distribution labels OOD', y_OOD.value_counts())
+                print('Distribution labels OOD', y_OOD['cell_type'].value_counts())
 
             # Convert test ID and OOD data to dense and concatenate
             data_test = torch.from_numpy(X_test.todense())
@@ -288,16 +285,14 @@ class LitLungDataModule(L.LightningDataModule):
             OOD_ind = pd.DataFrame(
             [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
             )
-            if not os.path.exists(
-            self.data_dir + "OOD_ind_lung" + "_dataset_" + str(self.name) + ".csv"
-            ):
-                OOD_ind.to_csv(
-                    self.data_dir
-                    + "OOD_ind_lung"
-                    + "_dataset_"
-                    + str(self.name)
-                    + ".csv"
-                )
+
+            OOD_ind.to_csv(
+                self.data_dir
+                + "OOD_ind_lung"
+                + "_dataset_"
+                + str(self.name)
+                + ".csv"
+            )
             return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
         elif self.scenario.startswith("tissue"):
@@ -366,16 +361,14 @@ class LitLungDataModule(L.LightningDataModule):
             OOD_ind = pd.DataFrame(
             [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
             )
-            if not os.path.exists(
-            self.data_dir + "OOD_ind_lung" + "_dataset_" + str(self.name) + ".csv"
-            ):
-                OOD_ind.to_csv(
-                    self.data_dir
-                    + "OOD_ind_lung"
-                    + "_dataset_"
-                    + str(self.name)
-                    + ".csv"
-                )
+
+            OOD_ind.to_csv(
+                self.data_dir
+                + "OOD_ind_lung"
+                + "_dataset_"
+                + str(self.name)
+                + ".csv"
+            )
 
             return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
@@ -396,17 +389,17 @@ class LitLungDataModule(L.LightningDataModule):
         """
         un_test = np.unique(y_test)
         un_train = np.unique(y_train)
+        print('un_train', un_train)
+        print('un_test', un_test)
         self.un_test = un_test
         self.un_train = un_train
 
         if sum([t not in un_train for t in un_test]) > 0:
             ind = True
-            idx_OOD = pd.DataFrame([-1 if t not in un_train else 1 for t in y_test])
+            idx_OOD = pd.DataFrame([-1 if t not in un_train else 1 for t in y_test.numpy()])
         else:
             ind = False
             idx_OOD = pd.DataFrame([None])
-        if self.verbose == "True":
-            print('n OOD', sum(idx_OOD))
         return ind, idx_OOD
 
     def setup(self,stage):
@@ -440,7 +433,7 @@ class LitLungDataModule(L.LightningDataModule):
         if self.verbose == "True":
             print("OOD celltypes?", OOD_idx)
             if OOD_ind.iloc[0,0] != None:
-                print("Size OOD data?", sum(OOD_ind.iloc[:,0].values))
+                print("Size OOD data?", sum([1 for i in OOD_ind.iloc[:,0].values if i == -1]))
             print(" \n")
         # if not os.path.exists(
         #     self.data_dir + "OOD_ind_lung" + "_celltype_" + str(self.name) + ".csv"
@@ -598,21 +591,21 @@ class LitImmuneDataModule(L.LightningDataModule):
 
             # Read in OOD data
             X_OOD = data_patient[
-                obs_patient["batch"].values == self.patients_ID[current_sc]
+                obs_patient["batch"].values == self.patients_ID[current_sc],
             ]
 
             y_OOD = obs_patient.iloc[
-                obs_patient_["batch"].values == self.patients_ID[current_sc],:
-            ]["final_annotation"]
+                obs_patient["batch"].values == self.patients_ID[current_sc],:
+            ]
 
             # Read in train_val(_test) data (= ID data)
             X_train_val = data_patient[
-                obs_patient["batch"].values != self.patients_ID[current_sc]
+                obs_patient["batch"].values != self.patients_ID[current_sc],
             ]
             y_train_val = obs_patient.iloc[
                 obs_patient["batch"].values != self.patients_ID[current_sc],:
-            ]["final_annotation"]
-
+            ]
+            
             # filter all data
             X_train_val,  y_train_val = self.filter_counts_h5ad(
                  X_train_val,  y_train_val, self.min_celltypes
@@ -624,9 +617,9 @@ class LitImmuneDataModule(L.LightningDataModule):
             # Split "ID" data
             X_train, X_val_test, y_train_, y_val_test = train_test_split(
                 X_train_val,
-                y_train_val,
+                y_train_val["final_annotation"],
                 test_size=1-train_ratio,
-                stratify=y_train_val.values,
+                stratify=y_train_val["final_annotation"].values,
                 random_state=0,
             )
 
@@ -651,7 +644,7 @@ class LitImmuneDataModule(L.LightningDataModule):
             labels_test = torch.from_numpy(np.array(y_test_))
             data_OOD = torch.from_numpy(X_OOD.todense())
             self.data_OOD = data_OOD
-            y_OOD_ = [self.conversion_dict[i] for i in y_OOD.values]
+            y_OOD_ = [self.conversion_dict[i] for i in y_OOD["final_annotation"].values]
             labels_OOD = torch.from_numpy(np.array(y_OOD_))
             data_test_total = torch.cat((data_test, data_OOD), 0)
             labels_test_total = torch.cat((labels_test, labels_OOD), 0)
@@ -659,8 +652,8 @@ class LitImmuneDataModule(L.LightningDataModule):
 
             if self.verbose == "True":
                 print(' \n')
-                print('Distribution labels train-val', y_train_val.value_counts())
-                print('Distribution labels OOD', y_OOD.value_counts())
+                print('Distribution labels train-val', y_train_val["final_annotation"].value_counts())
+                print('Distribution labels OOD', y_OOD["final_annotation"].value_counts())
                 print('Distribution val-test', y_val_test.value_counts())
                 print(' \n')
 
@@ -668,16 +661,13 @@ class LitImmuneDataModule(L.LightningDataModule):
             OOD_ind = pd.DataFrame(
             [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
             )
-            if not os.path.exists(
-            self.data_dir + "OOD_ind_immune" + "_dataset_" + str(self.name) + ".csv"
-            ):
-                OOD_ind.to_csv(
-                    self.data_dir
-                    + "OOD_ind_immune"
-                    + "_dataset_"
-                    + str(self.name)
-                    + ".csv"
-                )
+            OOD_ind.to_csv(
+                self.data_dir
+                + "OOD_ind_immune"
+                + "_dataset_"
+                + str(self.name)
+                + ".csv"
+            )
 
             return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
@@ -735,7 +725,7 @@ class LitImmuneDataModule(L.LightningDataModule):
             if self.verbose == "True":
                 print(' \n')
                 print('Distribution labels train-val', y_train_.value_counts())
-                print('Distribution labels OOD', y_OOD.value_counts())
+                print('Distribution labels OOD', y_OOD['final_annotation'].value_counts())
                 print('Distribution val-test', y_val_test.value_counts())
                 print(' \n')
 
@@ -808,7 +798,7 @@ class LitImmuneDataModule(L.LightningDataModule):
             if self.verbose == "True":
                 print(' \n')
                 print('Distribution labels train-val', y_train_.value_counts())
-                print('Distribution labels OOD', y_OOD.value_counts())
+                print('Distribution labels OOD', y_OOD['final_annotation'].value_counts())
                 print('Distribution val-test', y_val_test.value_counts())
                 print(' \n')
 
@@ -817,16 +807,13 @@ class LitImmuneDataModule(L.LightningDataModule):
             [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
             )
             self.OOD_ind = OOD_ind
-            if not os.path.exists(
-            self.data_dir + "OOD_ind_immune" + "_dataset_" + str(self.name) + ".csv"
-            ):
-                OOD_ind.to_csv(
-                    self.data_dir
-                    + "OOD_ind_immune"
-                    + "_dataset_"
-                    + str(self.name)
-                    + ".csv"
-                )
+            OOD_ind.to_csv(
+                self.data_dir
+                + "OOD_ind_immune"
+                + "_dataset_"
+                + str(self.name)
+                + ".csv"
+            )
             return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
     def check_for_OOD(self, y_train, y_test):

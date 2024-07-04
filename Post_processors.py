@@ -1,12 +1,13 @@
+import os
+from LModule import *
 import torch
 import numpy as np
 from torch import nn
-
+# import faiss
 
 # Adapted from code OpenOOD
 # NOTE to self: post processing is something completely different from testing/predicting
 class base_postprocessor:
-
     def postprocess(self, net, data):
         output = net(data)
         scores = torch.softmax(output, dim=1)
@@ -41,87 +42,79 @@ class EBO_postprocessor:
         conf = self.temperature * torch.logsumexp(output / self.temperature, dim=1)
         return pred, conf, score
 
+KNN_normalizer = lambda x: x / np.linalg.norm(x, axis=-1, keepdims=True) + 1e-10
 
-# class EnsemblePostprocessor(BasePostprocessor):
-#     def __init__(self, config):
-#         super(EnsemblePostprocessor, self).__init__(config)
-#         self.config = config
-#         self.postprocess_config = config.postprocessor
-#         self.postprocessor_args = self.postprocess_config.postprocessor_args
-#         assert self.postprocessor_args.network_name == \
-#             self.config.network.name,\
-#             'checkpoint network type and model type do not align!'
-#         # get ensemble args
-#         self.checkpoint_root = self.postprocessor_args.checkpoint_root
+class KNNPostprocessor():
+    def __init__(self, k):
+        super(KNNPostprocessor, self).__init__(config)
+        self.K = k
+        self.setup_flag = False
+    
+    def setup(self, data):
+        if not self.setup_flag:
+            # 1) set up the index, based on the features
+              _, feature = net(data, return_feature=True) 
+            d = feature.cpu().numpy().shape[1]
+            print('check KNN post d', d) 
+            self.index = faiss.IndexFlatL2(d)
 
-#         # list of trained network checkpoints
-#         self.checkpoints = self.postprocessor_args.checkpoints
-#         # number of networks to esembel
-#         self.num_networks = self.postprocessor_args.num_networks
-#         # get networks
-#         self.checkpoint_dirs = [
-#             osp.join(self.checkpoint_root, path, 'best.ckpt')
-#             for path in self.checkpoints
-#         ]
+            # 2) add (normalized) vectors 
+            self. index.add(normalizer(data))
 
-#     def setup(self, net: nn.Module, id_loader_dict, ood_loader_dict):
-#         self.networks = [deepcopy(net) for i in range(self.num_networks)]
-#         for i in range(self.num_networks):
-#             self.networks[i].load_state_dict(torch.load(
-#                 self.checkpoint_dirs[i]),
-#                                              strict=False)
-#             self.networks[i].eval()
-
-#     def postprocess(self, net: nn.Module, data: Any):
-#         logits_list = [
-#             self.networks[i](data) for i in range(self.num_networks)
-#         ]
-#         logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
-#         for i in range(self.num_networks):
-#             logits_mean += logits_list[i]
-#         logits_mean /= self.num_networks
-
-#         score = torch.softmax(logits_mean, dim=1)
-#         conf, pred = torch.max(score, dim=1)
-#         return pred, conf
+            self.setup_flag = True
+        else:
+            pass
+            
+    def postprocess(self, net, data):
+        output, feature = net(data, return_feature=True) 
+        print("Check KNN postprocessor", feature.shape)
+        feature_normed = normalizer(feature.cpu().numpy())
+        print("Check KNN postprocessor normalizer", feature_normed.shape)
+        D, _ = self.index.search(
+            feature_normed,
+            self.K,
+        )
+        kth_dist = -D[:, -1]
+        _, pred = torch.max(torch.softmax(output, dim=1), dim=1)
+        return pred, torch.from_numpy(kth_dist)
 
 
-# normalizer = lambda x: x / np.linalg.norm(x, axis=-1, keepdims=True) + 1e-10
-# class KNN_postprocessor():
-#     def __init__(self, K):
-#         self.K = K
+class Ensemble_postprocessor():
+    def __init__(self, model_dir, name_analysis):
+        super(Ensemble_postprocessor, self).__init__()
+        
+        self.checkpoint_root = model_dir
 
-#     def setup(self):
-#  with torch.no_grad():
-#             for batch in tqdm(id_loader_dict['train'],
-#                               desc='Setup: ',
-#                               position=0,
-#                               leave=True):
-#                 data = batch['data'].cuda()
-#                 data = data.float()
+        # number of networks to esembel
+        self.num_networks = 10
+        # get networks TODO: carefull: arbitrary naming here
+        self.checkpoint_dirs = [
+            name_analysis +'_' + str(i) + "_best_model.ckpt"
+            for i in range(0, self.num_networks)
+        ]
 
-#                 _, feature = net(data, return_feature=True)
-#                 activation_log.append(
-#                     normalizer(feature.data.cpu().numpy()))
+    # TODO restructure to load in the models
+    def setup(self, net):
+        os.chdir(self.checkpoint_root)
+        # Extract lightning modules
+        self.modules= [
+            LitBasicNN.load_from_checkpoint(self.checkpoint_dirs[i]) for i in range(0,self.num_networks)
+        ]
 
-#         self.activation_log = np.concatenate(activation_log, axis=0)
-#         self.index = faiss.IndexFlatL2(feature.shape[1])
-#         self.index.add(self.activation_log)
+        # Extract networks
+        self.networks = [self.modules[i].NN for i in range(0, self.num_networks)]
 
-# def postprocess(self):
-# need to add a return feature
-# feature_normed = normalizer(feature.data.cpu().numpy())
-# postprocessor_args:
+    def postprocess(self, data):
+        # Get output model
+        logits_list = [
+            self.networks[i](data) for i in range(self.num_networks)
+        ]
 
-#  D, _ = self.index.search(
-#     feature_normed,
-#     self.K,
-# )
-# kth_dist = -D[:, -1]
-# _, pred = torch.max(torch.softmax(output, dim=1), dim=1)
-# return pred, torch.from_numpy(kth_dist)
+        #         logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
+        for i in range(self.num_networks):
+            logits_mean += logits_list[i]
+        logits_mean /= self.num_networks
 
-
-# K: 50
-# postprocessor_sweep:
-#  K_list: [50, 100, 200, 500, 1000]
+        score = torch.softmax(logits_mean, dim=1) #TODO: Q Thomas
+        conf, pred = torch.max(score, dim=1)
+        return pred, conf
