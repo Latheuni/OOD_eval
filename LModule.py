@@ -14,6 +14,13 @@ from torchmetrics.classification import (
     Accuracy,
 ) 
 import torch.nn.functional as F
+
+import numpy as np
+from torch import nn
+from torch import autograd
+from torch.distributions.dirichlet import Dirichlet
+
+from Normalizing_flows import *
 class LitBasicNN(L.LightningModule):
     def __init__(self, NN, loss_function, learning_rate, n_classes, decay=0.95):
         super().__init__()
@@ -125,3 +132,82 @@ class LitBasicNN(L.LightningModule):
         #    optimizer, lr_lambda=lambd
         #)
         return optimizer
+
+## The following code is based on code from:  https://github.com/sharpenb/Posterior-Network/tree/main
+__budget_functions__ = {'one': lambda N: torch.ones_like(N),
+                        'log': lambda N: torch.log(N + 1.),
+                        'id': lambda N: N,
+                        'id_normalized': lambda N: N / N.sum(),
+                        'exp': lambda N: torch.exp(N),
+                        'parametrized': lambda N: torch.nn.Parameter(torch.ones_like(N).to(N.device))}
+
+def PosteriorNetwork(L.LightningModule):
+    def __init__(self,N, # Count of data from each class in training set. list of ints
+                NN, # network
+                budget_function='id',  # Budget function name applied on class count. name
+                batch_size = 128,  # Batch size. int
+                lr=1e-4,  # Learning rate. float
+                loss='UCE',  # Loss name. string
+                regr=1e-5,  # Regularization factor in Bayesian loss. float
+                seed=123):  # Random seed for init. int
+
+        if budget_function in __budget_functions__:
+            self.N, self.budget_function = __budget_functions__[budget_function](N), budget_function
+        else:
+            raise NotImplementedError
+        self.batch_size, self.lr = batch_size, lr
+        self.loss, self.regr = loss, regr
+
+    def training_step(self, batch, batch_idx):
+        x,y = batch
+        if self.loss == 'CE':
+            scores = self.NN(x, self.loss)
+            loss = self.CE_loss(scores,x)
+            return loss
+        elif self.loss == "UCE":
+            alpha, scores = self.NN(x, self.loss)
+            loss = self.UCE_loss(alpha,x)
+            return loss
+        else:
+                raise NotImplementedError
+    
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        if self.loss == 'CE':
+            scores = self.NN(x, self.loss)
+            val_loss = self.CE_loss(scores,x)
+        elif self.loss == "UCE":
+            alpha, scores = self.NN(x, self.loss)
+            val_loss = self.UCE_loss(alpha,x)
+        self.log("val_loss", val_loss)
+
+    def test_step(self, batch, batch_idx):
+        x, y = batch
+        scores = self.NN(x)
+        if self.loss == 'CE':
+            scores = self.NN(x, self.loss)
+            test_loss = self.CE_loss(scores,x)
+        elif self.loss == "UCE":
+            alpha, scores = self.NN(x, self.loss)
+            test_loss = self.UCE_loss(alpha,x)
+        self.log("test_loss", test_loss)
+        return scores, y
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        return self(batch)
+
+    def configure_optimizers(self):
+        optimizer = torch.optimize.Adam(self.parameters, lr=self.lr)
+
+    def CE_loss(self, soft_output_pred, soft_output):
+        with autograd.detect_anomaly():
+            CE_loss = - torch.sum(soft_output.squeeze() * torch.log(soft_output_pred))
+            return CE_loss
+
+    def UCE_loss(self, alpha, soft_output):
+        with autograd.detect_anomaly():
+            alpha_0 = alpha.sum(1).unsqueeze(-1).repeat(1, self.output_dim)
+            entropy_reg = Dirichlet(alpha).entropy()
+            UCE_loss = torch.sum(soft_output * (torch.digamma(alpha_0) - torch.digamma(alpha))) - self.regr * torch.sum(entropy_reg)
+
+            return UCE_loss

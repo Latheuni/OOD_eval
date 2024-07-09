@@ -3,7 +3,7 @@ from LModule import *
 import torch
 import numpy as np
 from torch import nn
-# import faiss
+import faiss
 
 # Adapted from code OpenOOD
 # NOTE to self: post processing is something completely different from testing/predicting
@@ -44,22 +44,24 @@ class EBO_postprocessor:
 
 KNN_normalizer = lambda x: x / np.linalg.norm(x, axis=-1, keepdims=True) + 1e-10
 
-class KNNPostprocessor():
+class KNN_postprocessor():
     def __init__(self, k):
-        super(KNNPostprocessor, self).__init__(config)
+        super(KNN_postprocessor, self).__init__()
         self.K = k
         self.setup_flag = False
     
-    def setup(self, data):
+    def setup(self, net, data):
         if not self.setup_flag:
             # 1) set up the index, based on the features
-              _, feature = net(data, return_feature=True) 
-            d = feature.cpu().numpy().shape[1]
-            print('check KNN post d', d) 
+            _, feature = net(data, return_feature=True) 
+            print(feature.detach().numpy().shape)
+            d = feature.detach().numpy().shape[1]
+            print('d', d)
             self.index = faiss.IndexFlatL2(d)
 
             # 2) add (normalized) vectors 
-            self. index.add(normalizer(data))
+            print(KNN_normalizer(feature.detach().numpy()).shape)
+            self.index.add(KNN_normalizer(feature.detach().numpy()))
 
             self.setup_flag = True
         else:
@@ -67,8 +69,8 @@ class KNNPostprocessor():
             
     def postprocess(self, net, data):
         output, feature = net(data, return_feature=True) 
-        print("Check KNN postprocessor", feature.shape)
-        feature_normed = normalizer(feature.cpu().numpy())
+        print("Check KNN postprocessor", feature.detach().numpy().shape)
+        feature_normed = KNN_normalizer(feature.detach().numpy())
         print("Check KNN postprocessor normalizer", feature_normed.shape)
         D, _ = self.index.search(
             feature_normed,
@@ -87,14 +89,12 @@ class Ensemble_postprocessor():
 
         # number of networks to esembel
         self.num_networks = 10
-        # get networks TODO: carefull: arbitrary naming here
         self.checkpoint_dirs = [
             name_analysis +'_' + str(i) + "_best_model.ckpt"
             for i in range(0, self.num_networks)
         ]
 
-    # TODO restructure to load in the models
-    def setup(self, net):
+    def setup(self):
         os.chdir(self.checkpoint_root)
         # Extract lightning modules
         self.modules= [
@@ -103,18 +103,19 @@ class Ensemble_postprocessor():
 
         # Extract networks
         self.networks = [self.modules[i].NN for i in range(0, self.num_networks)]
-
+        print(self.networks)
+        print(self.networks)
     def postprocess(self, data):
         # Get output model
         logits_list = [
             self.networks[i](data) for i in range(self.num_networks)
         ]
 
-        #         logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
+        logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
         for i in range(self.num_networks):
             logits_mean += logits_list[i]
         logits_mean /= self.num_networks
 
-        score = torch.softmax(logits_mean, dim=1) #TODO: Q Thomas
+        score = torch.softmax(logits_mean, dim=1) 
         conf, pred = torch.max(score, dim=1)
         return pred, conf

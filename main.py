@@ -38,7 +38,6 @@ else:
 
 ## Own imports
 from utils import read_config, load_dataset, load_network, evaluate_OOD
-from Trainers import LitBasicNN
 from Losses import LogitNormLoss, CrossEntropyLoss
 from Metrics import (
     general_metrics,
@@ -46,7 +45,7 @@ from Metrics import (
     auc_and_fpr_recall,
     plot_AR_curves,
 )
-from Post_processors import base_postprocessor, dropout_postprocessor, EBO_postprocessor, Ensemble_postprocessor
+from Post_processors import base_postprocessor, dropout_postprocessor, EBO_postprocessor, Ensemble_postprocessor, KNN_postprocessor
 from LModule import *
 
 # Code
@@ -236,6 +235,7 @@ def test_step(config_file, trainer, dataset):
     if training_config["OOD_strategy"] == "Ensembles":
         #Postprocess networks
         postprocessor = Ensemble_postprocessor(main_config["output_dir"] + main_config["name"] + "/EnsembleModels/", main_config["name"] )
+        postprocessor.setup()
         pred, conf = postprocessor.postprocess(test_X)
         
         # Calculate Measures
@@ -288,19 +288,19 @@ def test_step(config_file, trainer, dataset):
             "logitnorm": base_postprocessor(),
             "dropout": dropout_postprocessor(),
             "EBO": EBO_postprocessor(),
-            "Knn": Knn(),
         }
 
         # Implement for Knn a sweep for values of K
         if training_config["OOD_strategy"] == "Knn":
+            print('HERE')
             if verbose:
                 print('Start Knn postprocessor sweep:')
-            result_dict = dict()
+            results_dict = dict()
             for k in [50,100,200,500,1000]:
                 if verbose:
                     ('\t ' + str(k))
-                postprocessor = KnnPostprocessor(k)
-                postprocessor.setup(test_x)
+                postprocessor = KNN_postprocessor(k)
+                postprocessor.setup( network, test_X)
                 pred, conf = postprocessor.postprocess(
                         network, test_X)
                 results_dict_ = {}
@@ -309,7 +309,7 @@ def test_step(config_file, trainer, dataset):
                     print('Evaluating OOD dataset')
 
                 results_dict_ = evaluate_OOD(
-                    conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
+                    conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict_
                 )
 
                 if verbose:
@@ -318,13 +318,13 @@ def test_step(config_file, trainer, dataset):
 
                 if not np.isnan(OOD_label_celltype.iloc[0,0]):
                     results_dict_ = evaluate_OOD(
-                        conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
+                        conf.detach().numpy(), pred.detach().numpy(), y_true.detach().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict_
                     )
                 else:
                     results_dict_["celltype"] = None
                     if verbose:
                         print("No OOD celltypes, so no celltype analysis")
-                result_dict[k] = results_dict_
+                results_dict[k] = results_dict_
         else:
             postprocessor = postprocessor_dict[training_config["OOD_strategy"]]
             
@@ -382,11 +382,13 @@ def test_step(config_file, trainer, dataset):
 
     if verbose:
         print("Testing complete")
-    return (
-        scores,
-        y_true,
-        pred,
-    )
+
+    if training_config["OOD_strategy"] in ["Ensembles", "Knn"]:
+        return (conf.detach().numpy(), y_true, pred)
+    else:
+        return (
+            scores, y_true, pred,
+        )
 
 
 import json
