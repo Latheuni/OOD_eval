@@ -4,7 +4,7 @@ import numpy as np
 from torch import nn
 from torch import autograd
 from torch.distributions.dirichlet import Dirichlet
-from Normalizing_flows import *
+#from Normalizing_flows import *
 
 ## networks
 class LinearNetwork(nn.Sequential):  # Deep Linear network
@@ -129,9 +129,7 @@ class Posterior_network(nn.Sequential):  # Deep Linear network
         nodes_per_layer,
         num_hidden_layers,
         activation,
-        config_file,
         network_type,
-        batch_size,
         n_density=6,
         density_type = "radial_flow", #use radial flow
         loss = "UCE",

@@ -6,12 +6,7 @@ from Datasets import *
 from Networks import *
 from Metrics import *
 
-def get_N(labels, output_dim): # Saves class counts to vector for posterior networks
-    class_index, class_count = np.unique(labels, return_counts=True)
-    N = np.zeros(output_dim)
-    N[class_index.astype(int)] = class_count
-    N = torch.tensor(N)
-    return(N)
+
 
 def read_config(yaml_file):
     """very sepcific yaml file

@@ -49,28 +49,34 @@ class KNN_postprocessor():
         super(KNN_postprocessor, self).__init__()
         self.K = k
         self.setup_flag = False
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        print('in postprocessor device is', self.device)
     
     def setup(self, net, data):
         if not self.setup_flag:
+            net.to(self.device)
+            data = data.to(self.device)
             # 1) set up the index, based on the features
             _, feature = net(data, return_feature=True) 
-            print(feature.detach().numpy().shape)
-            d = feature.detach().numpy().shape[1]
+            print(feature.detach().cpu().numpy().shape)
+            d = feature.detach().cpu().numpy().shape[1]
             print('d', d)
             self.index = faiss.IndexFlatL2(d)
 
             # 2) add (normalized) vectors 
-            print(KNN_normalizer(feature.detach().numpy()).shape)
-            self.index.add(KNN_normalizer(feature.detach().numpy()))
+            print(KNN_normalizer(feature.detach().cpu().numpy()).shape)
+            self.index.add(KNN_normalizer(feature.detach().cpu().numpy()))
 
             self.setup_flag = True
         else:
             pass
             
     def postprocess(self, net, data):
+        net.to(self.device)
+        data = data.to(self.device)
         output, feature = net(data, return_feature=True) 
-        print("Check KNN postprocessor", feature.detach().numpy().shape)
-        feature_normed = KNN_normalizer(feature.detach().numpy())
+        print("Check KNN postprocessor", feature.detach().cpu().numpy().shape)
+        feature_normed = KNN_normalizer(feature.detach().cpu().numpy())
         print("Check KNN postprocessor normalizer", feature_normed.shape)
         D, _ = self.index.search(
             feature_normed,
@@ -93,20 +99,27 @@ class Ensemble_postprocessor():
             name_analysis +'_' + str(i) + "_best_model.ckpt"
             for i in range(0, self.num_networks)
         ]
-
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        print('in postprocessor device is', self.device)
     def setup(self):
         os.chdir(self.checkpoint_root)
         # Extract lightning modules
         self.modules= [
             LitBasicNN.load_from_checkpoint(self.checkpoint_dirs[i]) for i in range(0,self.num_networks)
         ]
-
+        
+        
         # Extract networks
         self.networks = [self.modules[i].NN for i in range(0, self.num_networks)]
+        
+        
+        self.networks = [i.to(self.device) for i in self.networks]
         print(self.networks)
-        print(self.networks)
+
     def postprocess(self, data):
+
         # Get output model
+        data = data.to(self.device)
         logits_list = [
             self.networks[i](data) for i in range(self.num_networks)
         ]
@@ -119,3 +132,23 @@ class Ensemble_postprocessor():
         score = torch.softmax(logits_mean, dim=1) 
         conf, pred = torch.max(score, dim=1)
         return pred, conf
+
+class Posterior_postprocessor():
+    def __init__(self, uncertainty_type, loss = "UCE"):
+        self.uncertainty_type = uncertainty_type
+        self.loss = loss
+    def postprocess(self, net, data):
+        if self.loss = "UCE":
+            alpha, soft_output_pred = net(data)
+        else:
+            alpha = net(data)
+
+        if uncertainty_type == 'epistemic':
+            scores = alpha.sum(-1).cpu().detach().numpy()
+        elif uncertainty_type == 'aleatoric':
+            p = torch.nn.functional.normalize(alpha, p=1, dim=-1)
+            scores = p.max(-1)[0].cpu().detach().numpy()
+        pred = ...
+    return pred, scores
+
+

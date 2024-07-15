@@ -20,7 +20,7 @@ from torch import nn
 from torch import autograd
 from torch.distributions.dirichlet import Dirichlet
 
-from Normalizing_flows import *
+#from Normalizing_flows import *
 class LitBasicNN(L.LightningModule):
     def __init__(self, NN, loss_function, learning_rate, n_classes, decay=0.95):
         super().__init__()
@@ -144,8 +144,8 @@ __budget_functions__ = {'one': lambda N: torch.ones_like(N),
 def PosteriorNetwork(L.LightningModule):
     def __init__(self,N, # Count of data from each class in training set. list of ints
                 NN, # network
-                budget_function='id',  # Budget function name applied on class count. name
                 batch_size = 128,  # Batch size. int
+                budget_function='id',  # Budget function name applied on class count. name
                 lr=1e-4,  # Learning rate. float
                 loss='UCE',  # Loss name. string
                 regr=1e-5,  # Regularization factor in Bayesian loss. float
