@@ -45,9 +45,9 @@ from Metrics import (
     auc_and_fpr_recall,
     plot_AR_curves,
 )
-from Post_processors import base_postprocessor, dropout_postprocessor, EBO_postprocessor, Ensemble_postprocessor, KNN_postprocessor
+from Post_processors import base_postprocessor, dropout_postprocessor, EBO_postprocessor, Ensemble_postprocessor, KNN_postprocessor, Posterior_postprocessor
 from LModule import *
-
+from Networks import Posterior_network
 # Code
 ## basic module
 # Writes predictions in .pt format
@@ -81,6 +81,7 @@ def get_N(labels, output_dim): # Saves class counts to vector for posterior netw
     N[class_index.astype(int)] = class_count
     N = torch.tensor(N)
     return(N)
+
 def train_step(config_file, train_test_together=False):
     # Read in parameters
     main_config, dataset_config, network_config, training_config = read_config(
@@ -105,16 +106,18 @@ def train_step(config_file, train_test_together=False):
     DataLoader= load_dataset(config_file, train = True)
     n_classes = DataLoader.n_classes()
     n_features = DataLoader.n_features()
+    
+    DataLoader.prepare_data()
+    DataLoader.setup(stage="train")
     labels = DataLoader.data_train.labels
 
     if training_config["OOD_strategy"] == "Posterior":
 
-        N = get_N(labels, n_classes) #TODO check if this is ok with train labels
+        N = get_N(labels, n_classes) 
 
         # Define network and lightning module
-        network = Posterior_network(N, n_features, n_classes, network_config["nodes_per_layer"],
-                network_config["num_hidden_layer"], "relu", network_config["model"])
-        model = posteriorNetwork(network, batch_size = dataset['batch_size'], lr = training_config["learning_rate"] )
+        network = Posterior_network(N, n_features, n_classes, network_config["nodes_per_layer"], network_config["num_hidden_layer"], "relu", network_config["model"])
+        model = LitPostNN(N, network,n_classes, batch_size = dataset_config['batch_size'], lr = training_config["learning_rate"] )
     else:
         # Define Loss function
         loss_dict = {
@@ -265,12 +268,12 @@ def test_step(config_file, trainer, dataset):
         device_stats = DeviceStatsMonitor()
         callbacks_list = [pred_writer, device_stats]
 
-         # PostProcess
+        # PostProcess
         postprocessor_dict = {
             "logitnorm": base_postprocessor(),
             "dropout": dropout_postprocessor(),
             "EBO": EBO_postprocessor(),
-            "Posterior": Posterior_network(),
+            "Posterior": Posterior_postprocessor(),
         }
 
         # Implement for Knn a sweep for values of K
@@ -311,7 +314,7 @@ def test_step(config_file, trainer, dataset):
         else:
             postprocessor = postprocessor_dict[training_config["OOD_strategy"]]
             
-            pred, conf, scores = postprocessor.postprocess(
+            pred, conf, scores = postprocessor.postprocess( 
                 network, test_X
             )  # conf is the score of the prediction, scores returns everything
 

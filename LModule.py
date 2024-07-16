@@ -19,7 +19,7 @@ import numpy as np
 from torch import nn
 from torch import autograd
 from torch.distributions.dirichlet import Dirichlet
-
+from Losses import CE_loss, UCE_loss
 #from Normalizing_flows import *
 class LitBasicNN(L.LightningModule):
     def __init__(self, NN, loss_function, learning_rate, n_classes, decay=0.95):
@@ -141,55 +141,65 @@ __budget_functions__ = {'one': lambda N: torch.ones_like(N),
                         'exp': lambda N: torch.exp(N),
                         'parametrized': lambda N: torch.nn.Parameter(torch.ones_like(N).to(N.device))}
 
-def PosteriorNetwork(L.LightningModule):
+class LitPostNN(L.LightningModule):
     def __init__(self,N, # Count of data from each class in training set. list of ints
                 NN, # network
+                output_dim,
                 batch_size = 128,  # Batch size. int
                 budget_function='id',  # Budget function name applied on class count. name
                 lr=1e-4,  # Learning rate. float
                 loss='UCE',  # Loss name. string
                 regr=1e-5,  # Regularization factor in Bayesian loss. float
-                seed=123):  # Random seed for init. int
-
+                seed=123, 
+                decay=0.95):  # Random seed for init. int
+        super().__init__()
         if budget_function in __budget_functions__:
             self.N, self.budget_function = __budget_functions__[budget_function](N), budget_function
         else:
             raise NotImplementedError
         self.batch_size, self.lr = batch_size, lr
-        self.loss, self.regr = loss, regr
+        self.loss_name = loss
+        if self.loss_name == "UCE":
+            self.loss = UCE_loss(output_dim)
+        else:
+            self.loss = CE_loss()
+        self.regr = regr
+        self.decay = decay
+        self.save_hyperparameters()
+        self.NN = NN
 
     def training_step(self, batch, batch_idx):
         x,y = batch
-        if self.loss == 'CE':
-            scores = self.NN(x, self.loss)
-            loss = self.CE_loss(scores,x)
-            return loss
-        elif self.loss == "UCE":
-            alpha, scores = self.NN(x, self.loss)
-            loss = self.UCE_loss(alpha,x)
-            return loss
+        if self.loss_name == 'CE':
+            scores = self.NN(x)
+            l = self.loss(scores,x)
+            return l
+        elif self.loss_name == "UCE":
+            alpha, scores = self.NN(x)
+            l = self.loss(alpha,x)
+            return l
         else:
-                raise NotImplementedError
+            raise NotImplementedError
     
     def validation_step(self, batch, batch_idx):
         x, y = batch
-        if self.loss == 'CE':
-            scores = self.NN(x, self.loss)
-            val_loss = self.CE_loss(scores,x)
-        elif self.loss == "UCE":
-            alpha, scores = self.NN(x, self.loss)
-            val_loss = self.UCE_loss(alpha,x)
+        if self.loss_name == 'CE':
+            scores = self.NN(x)
+            val_loss = self.loss(scores,x)
+        elif self.loss_name == "UCE":
+            alpha, scores = self.NN(x)
+            val_loss = self.loss(alpha,x)
         self.log("val_loss", val_loss)
 
     def test_step(self, batch, batch_idx):
         x, y = batch
         scores = self.NN(x)
-        if self.loss == 'CE':
-            scores = self.NN(x, self.loss)
-            test_loss = self.CE_loss(scores,x)
-        elif self.loss == "UCE":
-            alpha, scores = self.NN(x, self.loss)
-            test_loss = self.UCE_loss(alpha,x)
+        if self.loss_name == 'CE':
+            scores = self.NN(x)
+            test_loss = self.loss(scores,x)
+        elif self.loss_name == "UCE":
+            alpha, scores = self.NN(x)
+            test_loss = self.loss(alpha,x)
         self.log("test_loss", test_loss)
         return scores, y
 
@@ -197,17 +207,16 @@ def PosteriorNetwork(L.LightningModule):
         return self(batch)
 
     def configure_optimizers(self):
-        optimizer = torch.optimize.Adam(self.parameters, lr=self.lr)
+        lambd = lambda epoch: self.decay
+        
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=float(self.lr) #TODO: which part has trainable parameters?
+        )  # can still add weight decay
 
-    def CE_loss(self, soft_output_pred, soft_output):
-        with autograd.detect_anomaly():
-            CE_loss = - torch.sum(soft_output.squeeze() * torch.log(soft_output_pred))
-            return CE_loss
+        # Don't use a lr_scheduler, does not improve results
+        #lr_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(
+        #    optimizer, lr_lambda=lambd
+        #)
+        return optimizer
 
-    def UCE_loss(self, alpha, soft_output):
-        with autograd.detect_anomaly():
-            alpha_0 = alpha.sum(1).unsqueeze(-1).repeat(1, self.output_dim)
-            entropy_reg = Dirichlet(alpha).entropy()
-            UCE_loss = torch.sum(soft_output * (torch.digamma(alpha_0) - torch.digamma(alpha))) - self.regr * torch.sum(entropy_reg)
-
-            return UCE_loss
+    

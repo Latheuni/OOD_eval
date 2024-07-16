@@ -133,22 +133,22 @@ class Ensemble_postprocessor():
         conf, pred = torch.max(score, dim=1)
         return pred, conf
 
-class Posterior_postprocessor():
+class Posterior_postprocessor():  #TODO Check imports eveywhere
     def __init__(self, uncertainty_type, loss = "UCE"):
         self.uncertainty_type = uncertainty_type
         self.loss = loss
     def postprocess(self, net, data):
-        if self.loss = "UCE":
+        if self.loss == "UCE":
             alpha, soft_output_pred = net(data)
         else:
-            alpha = net(data)
+            NotImplementedError
 
         if uncertainty_type == 'epistemic':
             scores = alpha.sum(-1).cpu().detach().numpy()
         elif uncertainty_type == 'aleatoric':
             p = torch.nn.functional.normalize(alpha, p=1, dim=-1)
             scores = p.max(-1)[0].cpu().detach().numpy()
-        pred = ...
-    return pred, scores
+        _, pred = torch.max(soft_output_pred, dim=1) 
+        return pred, scores
 
 
