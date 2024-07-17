@@ -93,7 +93,7 @@ class Ensemble_postprocessor():
         
         self.checkpoint_root = model_dir
 
-        # number of networks to esembel
+        # number of networks to ensemble
         self.num_networks = 10
         self.checkpoint_dirs = [
             name_analysis +'_' + str(i) + "_best_model.ckpt"
@@ -133,21 +133,28 @@ class Ensemble_postprocessor():
         conf, pred = torch.max(score, dim=1)
         return pred, conf
 
-class Posterior_postprocessor():  #TODO Check imports eveywhere
-    def __init__(self, uncertainty_type, loss = "UCE"):
+class Posterior_postprocessor(): 
+    def __init__(self, uncertainty_type = "epistemic", loss = "UCE"):
         self.uncertainty_type = uncertainty_type
         self.loss = loss
+        if torch.cuda.is_available():
+            self.dev = 'cuda' 
+        else: 
+            self.dev = 'cpu'
+
     def postprocess(self, net, data):
+        data = data.to(self.dev)
         if self.loss == "UCE":
             alpha, soft_output_pred = net(data)
         else:
             NotImplementedError
 
-        if uncertainty_type == 'epistemic':
+        if self.uncertainty_type == 'epistemic':
             scores = alpha.sum(-1).cpu().detach().numpy()
-        elif uncertainty_type == 'aleatoric':
+        elif self.uncertainty_type == 'aleatoric':
             p = torch.nn.functional.normalize(alpha, p=1, dim=-1)
             scores = p.max(-1)[0].cpu().detach().numpy()
+   
         _, pred = torch.max(soft_output_pred, dim=1) 
         return pred, scores
 

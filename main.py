@@ -75,6 +75,7 @@ class CustomWriter(BasePredictionWriter):
     def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
         torch.save(predictions, os.path.join(self.output_dir, "predictions.pt"))
 
+# Utility function necessary for posterior networks
 def get_N(labels, output_dim): # Saves class counts to vector for posterior networks
     class_index, class_count = np.unique(labels, return_counts=True)
     N = np.zeros(output_dim)
@@ -95,15 +96,15 @@ def train_step(config_file, train_test_together=False):
         print("Start Training")
         print("-------")
     
-     # Set up directionary to save the results
     if verbose:
         print("Set up direcionary and environment")
 
+    # Set up directory to save the results
     if not os.path.exists(main_config["output_dir"] + main_config["name"] + "/"):
         os.mkdir(main_config["output_dir"] + main_config["name"] + "/")
 
     # Define the dataset
-    DataLoader= load_dataset(config_file, train = True)
+    DataLoader = load_dataset(config_file, train = True)
     n_classes = DataLoader.n_classes()
     n_features = DataLoader.n_features()
     
@@ -111,34 +112,70 @@ def train_step(config_file, train_test_together=False):
     DataLoader.setup(stage="train")
     labels = DataLoader.data_train.labels
 
-    if training_config["OOD_strategy"] == "Posterior":
+    # Define Loss function
+    loss_dict = {
+        "logitnorm": LogitNormLoss(),
+        "dropout": CrossEntropyLoss(),
+        "EBO": CrossEntropyLoss(),
+        "Ensembles": CrossEntropyLoss(),
+        "Knn": CrossEntropyLoss(),
+        "Posterior": None, #Has it's own build in loss
+    }
+    loss_function = loss_dict[training_config["OOD_strategy"]]
+    
+    if training_config["OOD_strategy"] == "Ensembles":
+        for i in range(0,10):
+            # Define network
+            network = load_network(config_file, n_features,  n_classes)
 
-        N = get_N(labels, n_classes) 
+            # Define model
+            model = LitBasicNN(
+                network, loss_function, training_config["learning_rate"], n_classes
+            )
 
-        # Define network and lightning module
-        network = Posterior_network(N, n_features, n_classes, network_config["nodes_per_layer"], network_config["num_hidden_layer"], "relu", network_config["model"])
-        model = LitPostNN(N, network,n_classes, batch_size = dataset_config['batch_size'], lr = training_config["learning_rate"] )
+            # Logger
+            Logger = TensorBoardLogger(
+                main_config["output_dir"] + "tb_logger/", name=main_config["name"]
+            )
+
+            # Define callbacks
+            checkpoint_val = ModelCheckpoint(
+                monitor="val_loss",
+                dirpath=main_config["output_dir"] + main_config["name"] + "/",
+                filename=main_config["name"] + "_best_model",
+            )
+            device_stats = DeviceStatsMonitor()
+            lr_monitor = LearningRateMonitor(logging_interval="step")
+            earlystopping = EarlyStopping(monitor="val_loss", mode="min")  # for cross-entropy
+            callbacks_list = [
+                checkpoint_val,
+                earlystopping,
+                lr_monitor,
+                device_stats,
+            ]
+
+            # Define Trainer
+            trainer = Trainer(
+                max_epochs=training_config["max_epochs"],
+                logger=Logger,
+                callbacks=callbacks_list,
+                default_root_dir=main_config["output_dir"] + main_config["name"] + "/",
+                enable_progress_bar=False,
+                accelerator=training_config["accelerator"],
+                devices=training_config["devices"],
+                log_every_n_steps=2
+            )
+
+            # Train the model
+            trainer.fit(model, DataLoader)
+
     else:
-        # Define Loss function
-        loss_dict = {
-            "logitnorm": LogitNormLoss(),
-            "dropout": CrossEntropyLoss(),
-            "EBO": CrossEntropyLoss(),
-            "Ensembles": CrossEntropyLoss(),
-            "Knn": CrossEntropyLoss(),
-        }
-        loss_function = loss_dict[training_config["OOD_strategy"]]
+        if training_config["OOD_strategy"] == "Posterior":
+            N = get_N(labels, n_classes) 
 
-       
-        if training_config["OOD_strategy"] == "Ensembles":
-            for i in range(0,10):
-                # Define network
-                network = load_network(config_file, n_features,  n_classes)
-
-                # Define model
-                model = LitBasicNN(
-                    network, loss_function, training_config["learning_rate"], n_classes
-                )
+            # Define network and lightning module
+            network = Posterior_network(N, n_features, n_classes, network_config["nodes_per_layer"], network_config["num_hidden_layer"], "relu", network_config["model"])
+            model = LitPostNN(N, network,n_classes, batch_size = dataset_config['batch_size'], lr = training_config["learning_rate"] )
 
         else:
             # Define network
@@ -149,38 +186,41 @@ def train_step(config_file, train_test_together=False):
                 network, loss_function, training_config["learning_rate"], n_classes
             )
 
-    # Logger
-    Logger = TensorBoardLogger(
-        main_config["output_dir"] + "tb_logger/", name=main_config["name"]
-    )
+        # Logger
+        Logger = TensorBoardLogger(
+            main_config["output_dir"] + "tb_logger/", name=main_config["name"]
+        )
 
-    # Define callbacks
-    checkpoint_val = ModelCheckpoint(
-        monitor="val_loss",
-        dirpath=main_config["output_dir"] + main_config["name"] + "/",
-        filename=main_config["name"] + "_best_model",
-    )
-    device_stats = DeviceStatsMonitor()
-    lr_monitor = LearningRateMonitor(logging_interval="step")
-    earlystopping = EarlyStopping(monitor="val_loss", mode="min")  # for cross-entropy
-    callbacks_list = [
-        checkpoint_val,
-        earlystopping,
-        lr_monitor,
-        device_stats,
-    ]
+        # Define callbacks
+        checkpoint_val = ModelCheckpoint(
+            monitor="val_loss",
+            dirpath=main_config["output_dir"] + main_config["name"] + "/",
+            filename=main_config["name"] + "_best_model",
+        )
+        device_stats = DeviceStatsMonitor()
+        lr_monitor = LearningRateMonitor(logging_interval="step")
+        earlystopping = EarlyStopping(monitor="val_loss", mode="min")  # for cross-entropy
+        callbacks_list = [
+            checkpoint_val,
+            earlystopping,
+            lr_monitor,
+            device_stats,
+        ]
 
-    trainer = Trainer(
-        max_epochs=training_config["max_epochs"],
-        logger=Logger,
-        callbacks=callbacks_list,
-        default_root_dir=main_config["output_dir"] + main_config["name"] + "/",
-        enable_progress_bar=False,
-        accelerator=training_config["accelerator"],
-        devices=training_config["devices"],
-        log_every_n_steps=2
-    )
-    trainer.fit(model, DataLoader)
+        # Define the Trainer
+        trainer = Trainer(
+            max_epochs=training_config["max_epochs"],
+            logger=Logger,
+            callbacks=callbacks_list,
+            default_root_dir=main_config["output_dir"] + main_config["name"] + "/",
+            enable_progress_bar=False,
+            accelerator=training_config["accelerator"],
+            devices=training_config["devices"],
+            log_every_n_steps=2
+        )
+
+        # Train the model
+        trainer.fit(model, DataLoader)
 
     if verbose:
         DataLoader.display_data_characteristics()
@@ -252,12 +292,16 @@ def test_step(config_file, trainer, dataset):
             main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
         )
     else:
-        # load model from best checkpoint
-        model =  LitBasicNN.load_from_checkpoint(main_config["output_dir"] + main_config["name"] + "/" + main_config["name"] + "_best_model.ckpt")
+        if training_config["OOD_strategy"] == "Posterior":
+            model =  LitPostNN.load_from_checkpoint(main_config["output_dir"] + main_config["name"] + "/" + main_config["name"] + "_best_model.ckpt")
+
+        else:
+            # load model from best checkpoint
+            model =  LitBasicNN.load_from_checkpoint(main_config["output_dir"] + main_config["name"] + "/" + main_config["name"] + "_best_model.ckpt")
 
         # load network
         network = model.NN 
-
+        print(network)
         # Logger
         Logger = TensorBoardLogger(
             main_config["output_dir"] + "tb_logger/", name=main_config["name"]
@@ -311,9 +355,38 @@ def test_step(config_file, trainer, dataset):
                     if verbose:
                         print("No OOD celltypes, so no celltype analysis")
                 results_dict[k] = results_dict_
+            
+            
+        elif training_config["OOD_strategy"] == "Posterior":
+            postprocessor = postprocessor_dict[training_config["OOD_strategy"]]
+            pred, conf = postprocessor.postprocess( 
+                network, test_X
+            )  # conf is the score of the prediction, scores returns everything
+
+            # Calculate statistics
+            results_dict = {}
+            if verbose:
+                print(' \n')
+                print('Evaluating OOD dataset')
+
+            results_dict = evaluate_OOD(
+                conf, pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
+            )
+            
+            if verbose:
+                print(' \n')
+                print('Evaluating OOD celltypes')
+
+            if not np.isnan(OOD_label_celltype.iloc[0,0]):
+                results_dict = evaluate_OOD(
+                    conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
+                )
+            else:
+                results_dict["celltype"] = None
+                if verbose:
+                    print("No OOD celltypes, so no celltype analysis")
         else:
             postprocessor = postprocessor_dict[training_config["OOD_strategy"]]
-            
             pred, conf, scores = postprocessor.postprocess( 
                 network, test_X
             )  # conf is the score of the prediction, scores returns everything
@@ -341,23 +414,23 @@ def test_step(config_file, trainer, dataset):
                 if verbose:
                     print("No OOD celltypes, so no celltype analysis")
 
-            R = accuracy_reject_curves(conf.detach().numpy(), y_true.detach().numpy(), pred.detach().numpy())
-            plot_AR_curves(
-                R,
-                main_config["output_dir"]
-                + main_config["name"]
-                + "/"
-                + main_config["name"]
-                + "_AR_plot.png",
-            )
-            R.to_csv(
-                main_config["output_dir"]
-                + main_config["name"]
-                + "/"
-                + main_config["name"]
-                + "_AR.csv"
-            )
-            print("\n")
+            # R = accuracy_reject_curves(conf.detach().numpy(), y_true.detach().numpy(), pred.detach().numpy())
+            # plot_AR_curves(
+            #     R,
+            #     main_config["output_dir"]
+            #     + main_config["name"]
+            #     + "/"
+            #     + main_config["name"]
+            #     + "_AR_plot.png",
+            # )
+            # R.to_csv(
+            #     main_config["output_dir"]
+            #     + main_config["name"]
+            #     + "/"
+            #     + main_config["name"]
+            #     + "_AR.csv"
+            # )
+        print("\n")
         # save results
         save_dict_to_json(
             results_dict,
@@ -371,6 +444,8 @@ def test_step(config_file, trainer, dataset):
 
     if training_config["OOD_strategy"] in ["Ensembles", "Knn"]:
         return (conf.detach().cpu().numpy(), y_true, pred)
+    elif training_config["OOD_strategy"] == "Posterior":
+        return (conf, y_true, pred)
     else:
         return (
             scores, y_true, pred,

@@ -142,7 +142,8 @@ __budget_functions__ = {'one': lambda N: torch.ones_like(N),
                         'parametrized': lambda N: torch.nn.Parameter(torch.ones_like(N).to(N.device))}
 
 class LitPostNN(L.LightningModule):
-    def __init__(self,N, # Count of data from each class in training set. list of ints
+    def __init__(self,
+                N, # Count of data from each class in training set. list of ints
                 NN, # network
                 output_dim,
                 batch_size = 128,  # Batch size. int
@@ -160,51 +161,153 @@ class LitPostNN(L.LightningModule):
         self.batch_size, self.lr = batch_size, lr
         self.loss_name = loss
         if self.loss_name == "UCE":
-            self.loss = UCE_loss(output_dim)
+            self.loss = UCE_loss(output_dim, regr)
         else:
             self.loss = CE_loss()
         self.regr = regr
         self.decay = decay
         self.save_hyperparameters()
         self.NN = NN
+        self.output_dim = output_dim
+        if torch.cuda.is_available():
+            self.dev = 'cuda' 
+        else: 
+            self.dev = 'cpu'
 
+        if torchmetrics.__version__ > "0.9.3":
+            self.accuracy = MulticlassAccuracy(
+                num_classes=self.output_dim, average="micro"
+            )  # is not callable
+            self.balanced_accuracy = MulticlassAccuracy(
+                num_classes=self.output_dim, average="macro"
+            )
+            self.train_accuracy = MulticlassAccuracy(
+                num_classes=self.output_dim, average="micro"
+            )
+            self.val_accuracy = MulticlassAccuracy(
+                num_classes=self.output_dim, average="micro"
+            )
+            self.test_accuracy = MulticlassAccuracy(
+                num_classes=self.output_dim, average="micro"
+            )
+            self.val_balanced_accuracy = MulticlassAccuracy(
+                num_classes=self.output_dim, average="macro"
+            )
+            self.test_balanced_accuracy = MulticlassAccuracy(
+                num_classes=self.output_dim, average="macro"
+            )
+        else:
+            self.train_accuracy = Accuracy(num_classes=self.output_dim, average="micro")
+            self.val_accuracy = Accuracy(num_classes=self.output_dim, average="micro")
+            self.test_accuracy = Accuracy(num_classes=self.output_dim, average="micro")
+            self.val_balanced_accuracy = Accuracy(
+                num_classes=self.output_dim, average="macro"
+            )
+            self.test_balanced_accuracy = Accuracy(
+                num_classes=self.output_dim, average="macro"
+            )
     def training_step(self, batch, batch_idx):
         x,y = batch
+
+        # Make hot encodings
+        y_hot = torch.zeros(y.shape[0], self.output_dim)
+        y = y.to('cpu')
+        y_hot.scatter_(1, torch.unsqueeze(y,1), 1)
+        y_hot = y_hot.to(self.dev)
+        y = y.to(self.dev)
+
         if self.loss_name == 'CE':
+            # Calculate loss
             scores = self.NN(x)
-            l = self.loss(scores,x)
+            l = self.loss(scores,y_hot)
+
+            # Log
+            self.log(
+                "train_loss", l, on_step=True
+            )  # on_epoch acculumate and rduces all metric to the end of the epoch, on_step that specific call will not accumulate metrics
+            self.train_accuracy(scores, y)
+            self.log("training accuracy", self.train_accuracy, on_step=True)
+
             return l
+
         elif self.loss_name == "UCE":
+            # Calculate loss
             alpha, scores = self.NN(x)
-            l = self.loss(alpha,x)
+            l = self.loss(alpha,y_hot)
+            self.log(
+                "train_loss", l, on_step=True
+            )  # on_epoch acculumate and rduces all metric to the end of the epoch, on_step that specific call will not accumulate metrics
+           
+            # Log
+            self.train_accuracy(scores, y)
+            self.log("training accuracy", self.train_accuracy, on_step=True)
             return l
+
         else:
             raise NotImplementedError
     
     def validation_step(self, batch, batch_idx):
         x, y = batch
+
+        # Make hot encodings
+        y_hot = torch.zeros(y.shape[0], self.output_dim)
+        y = y.to('cpu')
+        y_hot = y_hot.to(self.dev)
+        y = y.to(self.dev)
+
+        # Calculate loss
         if self.loss_name == 'CE':
             scores = self.NN(x)
-            val_loss = self.loss(scores,x)
+            val_loss = self.loss(scores,y_hot)
         elif self.loss_name == "UCE":
             alpha, scores = self.NN(x)
-            val_loss = self.loss(alpha,x)
-        self.log("val_loss", val_loss)
+            val_loss = self.loss(alpha,y_hot)
+
+        # Log
+        self.log("val_loss", val_loss, on_step=True)
+        self.val_accuracy(scores, y)
+        self.val_balanced_accuracy(scores, y)
+        self.log("validation accuracy", self.val_accuracy, on_step=True)
+        self.log(
+            "validation balanced accuracy", self.val_balanced_accuracy, on_step=True
+        )
+
 
     def test_step(self, batch, batch_idx):
         x, y = batch
-        scores = self.NN(x)
+
+        # Make hot encodings
+        y_hot = torch.zeros(y.shape[0], self.output_dim)
+        y = y.to('cpu')
+        y_hot = y_hot.to(self.dev)
+        y = y.to(self.dev)
+
+        # Calculate loss
         if self.loss_name == 'CE':
             scores = self.NN(x)
-            test_loss = self.loss(scores,x)
+            test_loss = self.loss(scores,y_hot)
         elif self.loss_name == "UCE":
             alpha, scores = self.NN(x)
-            test_loss = self.loss(alpha,x)
+            test_loss = self.loss(alpha,y_hot)
+
+        # Log
         self.log("test_loss", test_loss)
+        self.test_accuracy(scores, y)
+        self.test_balanced_accuracy(scores, y)
+        self.log("test accuracy", self.test_accuracy, on_step=True)
+        self.log("test balanced accuracy", self.test_balanced_accuracy, on_step=True)
+
+        # Accumulate scores and predictions over batches
+        if batch_idx == 0:
+            self.ytrue = y
+            self.scores = scores 
+        else:
+            self.ytrue = torch.cat((self.ytrue, y), 0)
+            self.scores = torch.cat((self.scores, scores), 0)
         return scores, y
 
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        return self(batch)
+    #def predict_step(self, batch, batch_idx, dataloader_idx=0):
+    #    return self(batch)
 
     def configure_optimizers(self):
         lambd = lambda epoch: self.decay

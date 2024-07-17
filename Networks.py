@@ -141,7 +141,8 @@ class Posterior_network(nn.Sequential):  # Deep Linear network
         self.density_type = density_type
         self.latent_dim = nodes_per_layer #TODO:
         self.loss_name = loss
-        ## Define network as self.predictor
+
+        ## Define network (as self.predictor)
         if network_type == "linear":
             self.predictor =  LinearNetwork(input_dim, output_dim, nodes_per_layer,  num_hidden_layers)
 
@@ -152,7 +153,6 @@ class Posterior_network(nn.Sequential):  # Deep Linear network
         if self.density_type == 'planar_flow':
             self.density_estimation = nn.ModuleList([NormalizingFlowDensity(self.latent_dim, n_density, flow_type=density_type) for c in range(output_dim)])
         elif self.density_type == 'radial_flow':
-            print(num_hidden_layers)
             self.density_estimation = nn.ModuleList([NormalizingFlowDensity(self.latent_dim, n_density, flow_type= self.density_type) for _ in range(output_dim)])
         elif self.density_type == 'iaf_flow':
             self.density_estimation = nn.ModuleList([NormalizingFlowDensity(self.latent_dim, n_density, flow_type=density_type) for c in range(output_dim)])
@@ -177,20 +177,15 @@ class Posterior_network(nn.Sequential):  # Deep Linear network
     def forward(self, x, return_latent = False): #Note, during training you need to optimize on the embedded space
         N = self.N
         batch_size = x.size(0)
-        scores, zk = self.predictor(x, return_feature = True)#will return the latent space as well
+        scores, zk = self.predictor(x, return_feature = True) #will return the latent space as well in zk
         zk = self.batch_norm(zk)
-        print('batch norm done')
         log_q_zk = torch.zeros((batch_size, self.output_dim)).to(zk.device.type)
         alpha = torch.zeros((batch_size, self.output_dim)).to(zk.device.type)
-        print(zk.shape)
         if isinstance(self.density_estimation, nn.ModuleList):
             for c in range(self.output_dim):
                 log_p = self.density_estimation[c].log_prob(zk)
-                print(1)
                 log_q_zk[:, c] = log_p
-                print(2)
                 alpha[:, c] = 1. + (N[c] * torch.exp(log_q_zk[:, c]))
-                print(3)
         else:
             log_q_zk = self.density_estimation.log_prob(zk)
             alpha = 1. + (N[:, None] * torch.exp(log_q_zk)).permute(1, 0)
@@ -199,7 +194,7 @@ class Posterior_network(nn.Sequential):  # Deep Linear network
         soft_output_pred = torch.nn.functional.normalize(alpha, p=1)
 
 
-        if return_latent: #Used afterwards to check latent space
+        if return_latent: # Used afterwards to check latent space
             if self.loss_name:
                 return(soft_output_pred, zk)
             elif self.loss_name:

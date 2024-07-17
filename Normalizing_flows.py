@@ -31,8 +31,6 @@ class NormalizingFlowDensity(nn.Module):
 
         sum_log_jacobians = 0
         for transform in self.transforms:
-            print(transform.input_dim)
-            print(z.shape)
             z_next = transform(z)
             sum_log_jacobians = sum_log_jacobians + transform.log_abs_det_jacobian(z, z_next)
             z = z_next
