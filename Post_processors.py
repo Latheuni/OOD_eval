@@ -34,8 +34,10 @@ class dropout_postprocessor:
 class EBO_postprocessor:
     def __init__(self, temperature=1):
         self.temperature = temperature
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     def postprocess(self, net, data):
+        data = data.to(self.device)
         output = net(data)
         score = torch.softmax(output, dim=1)
         _, pred = torch.max(score, dim=1)

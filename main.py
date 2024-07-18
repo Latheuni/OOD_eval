@@ -142,7 +142,7 @@ def train_step(config_file, train_test_together=False):
             checkpoint_val = ModelCheckpoint(
                 monitor="val_loss",
                 dirpath=main_config["output_dir"] + main_config["name"] + "/",
-                filename=main_config["name"] + "_best_model",
+                filename=main_config["name"] + str(i) + "_best_model",
             )
             device_stats = DeviceStatsMonitor()
             lr_monitor = LearningRateMonitor(logging_interval="step")
@@ -259,7 +259,7 @@ def test_step(config_file, trainer, dataset):
     
     if training_config["OOD_strategy"] == "Ensembles":
         #Postprocess networks
-        postprocessor = Ensemble_postprocessor(main_config["output_dir"] + main_config["name"] + "/EnsembleModels/", main_config["name"] )
+        postprocessor = Ensemble_postprocessor(main_config["output_dir"] + main_config["name"], main_config["name"] )
         postprocessor.setup()
         pred, conf = postprocessor.postprocess(test_X)
         
@@ -474,7 +474,7 @@ def save_dict_to_json(d_results, name_analysis):
 
 def save_numpy_array(obj, file_dir):
     if torch.is_tensor(obj):
-        obj = obj.detach().numpy()
+        obj = obj.detach().cpu().numpy()
 
     df = pd.DataFrame(obj)
     df.to_csv(file_dir)

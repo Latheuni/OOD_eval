@@ -195,16 +195,16 @@ class Posterior_network(nn.Sequential):  # Deep Linear network
 
 
         if return_latent: # Used afterwards to check latent space
-            if self.loss_name:
+            if self.loss_name == "CE":
                 return(soft_output_pred, zk)
-            elif self.loss_name:
+            elif self.loss_name == "UCE":
                 return(alpha, soft_output_pred, zk)
             else:
                 raise NotImplementedError 
         else:
             if self.loss_name == "CE":
                 return(soft_output_pred)
-            elif self.loss_name:
+            elif self.loss_name == "UCE":
                 return(alpha, soft_output_pred)
             else:
                 raise NotImplementedError 

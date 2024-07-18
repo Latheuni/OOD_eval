@@ -218,33 +218,34 @@ class LitPostNN(L.LightningModule):
 
         if self.loss_name == 'CE':
             # Calculate loss
-            scores = self.NN(x)
+            soft_output_pred = self.NN(x)
             l = self.loss(scores,y_hot)
-
+            _, pred = torch.max(soft_output_pred, dim=1) 
             # Log
             self.log(
                 "train_loss", l, on_step=True
             )  # on_epoch acculumate and rduces all metric to the end of the epoch, on_step that specific call will not accumulate metrics
-            self.train_accuracy(scores, y)
+            self.train_accuracy(pred, y)
             self.log("training accuracy", self.train_accuracy, on_step=True)
 
             return l
 
         elif self.loss_name == "UCE":
             # Calculate loss
-            alpha, scores = self.NN(x)
+            alpha, soft_output_pred = self.NN(x)
             l = self.loss(alpha,y_hot)
             self.log(
                 "train_loss", l, on_step=True
             )  # on_epoch acculumate and rduces all metric to the end of the epoch, on_step that specific call will not accumulate metrics
-           
+            _ , pred = torch.max(soft_output_pred, dim=1) 
             # Log
-            self.train_accuracy(scores, y)
+            self.train_accuracy(pred, y)
             self.log("training accuracy", self.train_accuracy, on_step=True)
             return l
 
         else:
             raise NotImplementedError
+        
     
     def validation_step(self, batch, batch_idx):
         x, y = batch
@@ -263,14 +264,20 @@ class LitPostNN(L.LightningModule):
             alpha, scores = self.NN(x)
             val_loss = self.loss(alpha,y_hot)
 
+        _, pred = torch.max(scores, dim=1) 
         # Log
         self.log("val_loss", val_loss, on_step=True)
-        self.val_accuracy(scores, y)
-        self.val_balanced_accuracy(scores, y)
+        self.val_accuracy(pred, y)
+        self.val_balanced_accuracy(pred, y)
         self.log("validation accuracy", self.val_accuracy, on_step=True)
         self.log(
             "validation balanced accuracy", self.val_balanced_accuracy, on_step=True
         )
+        print('val acc', self.val_accuracy)
+        print('y', y)
+        print('pred', pred)
+        print(len(pred))
+        print(sum([i == 4 for i in pred]))
 
 
     def test_step(self, batch, batch_idx):
