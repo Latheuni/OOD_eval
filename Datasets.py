@@ -157,7 +157,7 @@ class LitLungDataModule(L.LightningDataModule):
             X_OOD,  y_OOD = self.filter_counts_h5ad(
                  X_OOD, y_OOD, self.min_celltypes
             )
-            if self.verbose == "True":
+            if self.verbose:
                 print(' \n')
                 print('Distribution labels train-val', y_train_val.value_counts())
                 print('Distribution labels OOD', y_OOD.value_counts())
@@ -170,7 +170,7 @@ class LitLungDataModule(L.LightningDataModule):
                 stratify=y_train_val.values,
                 random_state=0,
             )
-            if self.verbose == "True":
+            if self.verbose:
                 print('Distribution labels val-test', y_val_test.value_counts())
                 print(' \n')
 
@@ -228,7 +228,7 @@ class LitLungDataModule(L.LightningDataModule):
             data_filter_train_val, obs_filter_train_val = self.filter_counts_h5ad(
                 data_train_val, obs_train_val, self.min_celltypes
             )
-            if self.verbose == "True":
+            if self.verbose:
                 print('Distribution labels train-val', obs_filter_train_val["cell_type"].value_counts())
            
             X_train, X_val_test, y_train_, y_val_test = train_test_split(
@@ -238,7 +238,7 @@ class LitLungDataModule(L.LightningDataModule):
                 stratify= obs_filter_train_val["cell_type"].values,
                 random_state=0,
             )
-            if self.verbose == "True":
+            if self.verbose:
                 print('Distribution labels val-test', y_val_test.value_counts())
             
             X_val, X_test, y_val_, y_test = train_test_split(
@@ -267,7 +267,7 @@ class LitLungDataModule(L.LightningDataModule):
             X_OOD, y_OOD = self.filter_counts_h5ad(
                 data_OOD, obs_OOD, self.min_celltypes
             )
-            if self.verbose == "True":
+            if self.verbose:
                 print('Distribution labels OOD', y_OOD['cell_type'].value_counts())
 
             # Convert test ID and OOD data to dense and concatenate
@@ -350,7 +350,7 @@ class LitLungDataModule(L.LightningDataModule):
             data_test_total = torch.cat((data_test, data_OOD), 0)
             labels_test_total = torch.cat((labels_test, labels_OOD), 0)
 
-            if self.verbose == "True":
+            if self.verbose:
                 print(' \n')
                 print('Distribution labels train-val', y_train_.value_counts())
                 print('Distribution labels OOD', y_OOD.value_counts())
@@ -430,7 +430,7 @@ class LitLungDataModule(L.LightningDataModule):
         OOD_idx, OOD_ind = self.check_for_OOD(y_train, y_test)
         self.OOD_idx = OOD_idx
         self.OOD_ind = OOD_ind
-        if self.verbose == "True":
+        if self.verbose: 
             print("OOD celltypes?", OOD_idx)
             if OOD_ind.iloc[0,0] != None:
                 print("Size OOD data?", sum([1 for i in OOD_ind.iloc[:,0].values if i == -1]))
@@ -472,7 +472,7 @@ class LitLungDataModule(L.LightningDataModule):
         """Return the number od features"""
         h5ad = sc.read_h5ad(self.data_dir + self.data_file)
         data = sparse.csr_matrix(h5ad.X)
-        if self.verbose == "True":
+        if self.verbose:
             print('n_features dataloader', data.shape[1] )
         return data.shape[1]
 
@@ -650,7 +650,7 @@ class LitImmuneDataModule(L.LightningDataModule):
             labels_test_total = torch.cat((labels_test, labels_OOD), 0)
             
 
-            if self.verbose == "True":
+            if self.verbose :
                 print(' \n')
                 print('Distribution labels train-val', y_train_val["final_annotation"].value_counts())
                 print('Distribution labels OOD', y_OOD["final_annotation"].value_counts())
@@ -722,7 +722,7 @@ class LitImmuneDataModule(L.LightningDataModule):
             data_test_total = torch.cat((data_test, data_OOD), 0)
             labels_test_total = torch.cat((labels_test, labels_OOD), 0)
             
-            if self.verbose == "True":
+            if self.verbose:
                 print(' \n')
                 print('Distribution labels train-val', y_train_.value_counts())
                 print('Distribution labels OOD', y_OOD['final_annotation'].value_counts())
@@ -795,7 +795,7 @@ class LitImmuneDataModule(L.LightningDataModule):
             labels_OOD = torch.from_numpy(np.array(y_OOD_))
             data_test_total = torch.cat((data_test, data_OOD), 0)
             labels_test_total = torch.cat((labels_test, labels_OOD), 0)
-            if self.verbose == "True":
+            if self.verbose:
                 print(' \n')
                 print('Distribution labels train-val', y_train_.value_counts())
                 print('Distribution labels OOD', y_OOD['final_annotation'].value_counts())
@@ -845,7 +845,7 @@ class LitImmuneDataModule(L.LightningDataModule):
         else:
             ind = False
             idx_OOD = pd.DataFrame([None])
-        if self.verbose == "True":
+        if self.verbose:
             print('n OOD', sum(idx_OOD))
         return ind, idx_OOD
 
@@ -876,7 +876,7 @@ class LitImmuneDataModule(L.LightningDataModule):
         OOD_idx, OOD_ind = self.check_for_OOD(y_train, y_test)
         self.OOD_idx = OOD_idx
         self.OOD_ind = OOD_ind
-        if self.verbose == "True":
+        if self.verbose:
             print("OOD celltypes?", OOD_idx)
             if OOD_ind.iloc[0,0] != None:
                 print("Size OOD data?", sum(OOD_ind.iloc[:,0].values))
@@ -931,7 +931,7 @@ class LitImmuneDataModule(L.LightningDataModule):
         """Return the number of features"""
         h5ad = sc.read_h5ad(self.data_dir + self.data_file)
         data = sparse.csr_matrix(h5ad.X)
-        if self.verbose == "True":
+        if self.verbose:
             print('n_features dataloader', data.shape[1] )
         return data.shape[1]
     def display_data_characteristics(self):
@@ -1020,7 +1020,7 @@ class LitPancreasDataModule(L.LightningDataModule):
 
     def setup(self, stage):
         # Data setup train
-        if self.verbose == "True":
+        if self.verbose:
             print("\n")
             print("--- Data characteristics ---")
             print("Total size data", self.data.shape)
@@ -1058,7 +1058,7 @@ class LitPancreasDataModule(L.LightningDataModule):
             torch.from_numpy(X_train.todense()),
             torch.from_numpy(np.array(labels_train)),
         )
-        if self.verbose == "True":
+        if self.verbose:
             print("Cell type classes", np.unique(labels_train))
 
         labels_val = [self.conversion_dict[i] for i in y_val.iloc[:, 0]]
@@ -1070,7 +1070,7 @@ class LitPancreasDataModule(L.LightningDataModule):
         labels_test_conv = [self.conversion_dict[i] for i in y_test.iloc[:, 0]]
         data_test = torch.from_numpy(X_test.todense())
         labels_test = torch.from_numpy(np.array(labels_test_conv))
-        if self.verbose == "True":
+        if self.verbose:
             print("Size training data", X_train.shape)
             print("Size validation data", X_val.shape)
             print("Size test data", X_test.shape)
@@ -1089,7 +1089,7 @@ class LitPancreasDataModule(L.LightningDataModule):
         data_OOD = torch.from_numpy(data_OODfilter.todense())
         labels_OOD = torch.from_numpy(np.array(labels_OODconverted))
 
-        if self.verbose == "True":
+        if self.verbose:
             print("Size OOD data", data_OODfilter.shape)
 
         # Setup test data
@@ -1128,12 +1128,12 @@ class LitPancreasDataModule(L.LightningDataModule):
             for i in labels_test_total
         ]
         if OOD_celltypes == []:
-            if self.verbose == "True":
+            if self.verbose :
                 print("No OOD celtypes")
             OOD_celltypes_ind = pd.DataFrame([None])
         else:
             OOD_celltypes_ind = pd.DataFrame(OOD_celltypes_ind)
-            if self.verbose == "True":
+            if self.verbose:
                 print("OOD celltypes", np.unique(OOD_celltypes))
                 print(
                     "percentage OOD celltypes",
@@ -1144,7 +1144,7 @@ class LitPancreasDataModule(L.LightningDataModule):
         OOD_celltypes_ind.to_csv(
             self.data_dir + "OOD_ind_pancreas" + "_celltypes_" + str(self.name) + ".csv"
         )
-        if self.verbose == "True":
+        if self.verbose:
             print(
                 "percentage OOD dataset",
                 len(labels_OOD) / labels_test_total.size(dim=0),
@@ -1227,7 +1227,7 @@ class LitPancreasDataModule(L.LightningDataModule):
             )
             fig.savefig(self.data_dir + filename)
         else:
-            if self.verbose == "True":
+            if self.verbose:
                 print("UMAP already exists")
 
     def plot_UMAP(self, filename):
@@ -1237,5 +1237,335 @@ class LitPancreasDataModule(L.LightningDataModule):
             )
             fig.savefig(self.data_dir + filename)
         else:
-            if self.verbose == "True":
+            if self.verbose:
                 print("UMAP already exists")
+
+class LitCOPDDataModule(L.LightningDataModule):
+    def __init__(
+        self,
+        data_dir,
+        data_file,
+        label_conversion_file, 
+        scenario,
+        batch_size,
+        val_size, 
+        test_size, 
+        num_workers,
+        name,
+        min_celltypes = 10,
+        min_cells_patient = 500,
+        verbose= True,
+    ):
+        """Lightning DataModule for the Lung dataset
+
+        Parameters
+        ----------
+        data_dir : str
+            path to data directory
+        data_file : str
+            filename of h5ad datafile
+        label_conversion_file : str
+            filename and dir where conversion dictionary of labels is saved
+        scenario : str
+            train/test split scenario
+            options: patient_1 - patient_20, COPD, IPF
+        batch_size : int
+        val_size : float
+            fraction of training data used for validation
+        num_workers : int
+            number of available cpu cores
+        name : _str
+            name of the analysis
+        min_celltypes : int
+            minimum amount of observations that need to be present for every cell type
+        min_cells_patient: int
+            minimum amount of observations that need to be present per patient
+        verbose : str, optional
+            by default "True"
+        """
+        super().__init__()
+        self.data_dir = data_dir
+        self.data_file = data_file
+        self.verbose = verbose
+        self.scenario = scenario
+        self.val_size = val_size
+        self.test_size = test_size
+        self.min_celltypes = min_celltypes
+        self.min_cells_patient = min_cells_patient
+        self.name = name
+        self.batch = batch_size
+        self.cpus = num_workers
+        with open(label_conversion_file) as json_file:
+            self.conversion_dict = json.load(json_file)
+        
+    
+
+    def default(obj):
+        if type(obj).__module__ == np.__name__:
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            else:
+                return obj.item()
+        elif type(obj) == pd.core.frame.DataFrame:
+            return obj.to_json()
+        elif type(obj) == pd.core.series.Series:
+            return obj.to_json()
+            
+    def save_dict_to_json(self, d_, name):
+        with open(name, "w") as f1:
+            json.dump(d_, f1, default=self.default)
+
+    def prepare_data(self):
+        # Read in the data
+        h5ad = sc.read_h5ad(self.data_dir + self.data_file)
+
+        # Save fixed order of patients to dile
+        if self.scenario.startswith("patient"):
+            #if not os.path.exists( self.data_dir + "COPD_control_patients.json"):
+            patients = np.unique(h5ad.obs.iloc[[i == "Control" for i in h5ad.obs['Disease_Identity']],:]["Subject_Identity"])
+            self.patients = {str(count+1): value for count,value in enumerate([i for i in patients if i not in ['084C', '244C']]) } 
+            self.save_dict_to_json(self.patients, self.data_dir + "COPD_control_patients.json")
+            
+            # else:
+            #     with open(self.data_dir + "COPD_control_patients.json") as json_file:
+            #         self.patients = json.loads(json_file.read())
+
+        self.data_ID, self.obs_ID, self.data_OOD, self.obs_OOD = self.filter_counts_h5ad(sparse.csr_matrix(h5ad.X), h5ad.obs)
+        self.labels_ID = self.obs_ID['Subclass_Cell_Identity']
+        self.labels_OOD = self.obs_OOD['Subclass_Cell_Identity']
+
+        
+
+       
+        
+    def filter_counts_h5ad(self, data, obs):
+        """Note this function is structured slightly different than the other modules, filtering of everything starts as beginning step"""
+       
+        if self.scenario.startswith('patient'):
+            scen_obs = obs.iloc[[i == "Control" for i in obs["Disease_Identity"]],:]
+            scen_data = data[[i == "Control" for i in obs["Disease_Identity"]],:]
+
+            # Filter out patients with less than self.min_cells_patients observations
+            patients =  np.unique(scen_obs['Subject_Identity'])
+            self.patients_remove = []
+            for p in patients:
+                c = sum([i == p for i in scen_obs["Subject_Identity"]])
+                if c < self.min_cells_patient:
+                    self.patients_remove.append(p)
+
+            scen_obs_fp = scen_obs.iloc[[i not in self.patients_remove for i in scen_obs["Subject_Identity"]],:]
+            scen_data_fp = scen_data[[i not in self.patients_remove for i in scen_obs["Subject_Identity"]],:]
+
+        elif self.scenario == "COPD":
+            scen_obs_fp = obs.iloc[[i in ["Control", "COPD"] for i in obs["Disease_Identity"]],:]
+            scen_data_fp = data[[i in ["Control", "COPD"] for i in obs["Disease_Identity"]],:]
+
+        elif self.scenario == "IPF":
+            scen_obs_fp = obs.iloc[[i in ["Control", "IPF"] for i in obs["Disease_Identity"]],:]
+            scen_data_fp = data[[i in ["Control", "IPF"] for i in obs["Disease_Identity"]],:]
+        else:
+            print('Invalid scenario')
+        
+        self.data = scen_data_fp
+        
+        
+        if self.scenario.startswith('patient'):
+            current_patient = self.scenario.split('_')[-1]
+            data_OOD = scen_data_fp[scen_obs_fp["Subject_Identity"].values == self.patients[current_patient],:]
+            obs_OOD = scen_obs_fp.iloc[scen_obs_fp["Subject_Identity"].values == self.patients[current_patient],:]
+            data_ID = scen_data_fp[scen_obs_fp["Subject_Identity"].values != self.patients[current_patient],:]
+            obs_ID = scen_obs_fp.iloc[scen_obs_fp["Subject_Identity"].values != self.patients[current_patient],:]
+
+        elif self.scenario == "COPD":
+            obs_OOD = scen_obs_fp.iloc[[i == "COPD" for i in scen_obs_fp["Disease_Identity"]],:]
+            data_OOD = scen_data_fp[[i == "COPD" for i in scen_obs_fp["Disease_Identity"]],:]
+            obs_ID  = scen_obs_fp.iloc[[i == "Control" for i in scen_obs_fp["Disease_Identity"]],:]
+            data_ID = scen_data_fp[[i ==  "Control" for i in scen_obs_fp["Disease_Identity"]],:]
+        elif self.scenario == "IPF":
+            obs_OOD = scen_obs_fp.iloc[[i == "IPF" for i in scen_obs_fp["Disease_Identity"]],:]
+            data_OOD = scen_data_fp[[i == "IPF" for i in scen_obs_fp["Disease_Identity"]],:]
+            obs_ID  = scen_obs_fp.iloc[[i == "Control" for i in scen_obs_fp["Disease_Identity"]],:]
+            data_ID = scen_data_fp[[i ==  "Control" for i in scen_obs_fp["Disease_Identity"]],:]
+        else:
+            print('Invalid scenario')
+
+        # Filter out cell types with less than self.min_celltypes observations
+        # For OOD
+        labels_OOD = obs_OOD["Subclass_Cell_Identity"].values
+        s = labels_OOD.value_counts() < self.min_celltypes
+        celltype_to_filter = s.index[s].to_list()
+        obs_OOD_fc = obs_OOD.iloc[[i not in celltype_to_filter for i in obs_OOD["Subclass_Cell_Identity"].values],:]
+        data_OOD_fc = data_OOD[[i not in celltype_to_filter for i in obs_OOD["Subclass_Cell_Identity"].values],:]
+        self.celltypes_filtered_OOD = celltype_to_filter
+  
+
+        # For ID
+        labels_ID = obs_ID["Subclass_Cell_Identity"]
+        s = labels_ID.value_counts() < self.min_celltypes
+        celltype_to_filter = s.index[s].to_list()
+        obs_ID_fc = obs_ID.iloc[[i not in celltype_to_filter for i in obs_ID["Subclass_Cell_Identity"]],:]
+        data_ID_fc = data_ID[[i not in celltype_to_filter for i in obs_ID["Subclass_Cell_Identity"]],:]
+        self.celltypes_filtered_ID = celltype_to_filter
+
+        return data_ID_fc, obs_ID_fc, data_OOD_fc, obs_OOD_fc
+
+    def pick_scenario(self):
+        train_ratio = 1 - (self.val_size + self.test_size)
+        
+        # Split "ID" data
+        X_train, X_val_test, y_train_, y_val_test = train_test_split(
+            self.data_ID,
+            self.labels_ID,
+            test_size=1-train_ratio,
+            stratify=self.labels_ID.values,
+            random_state=0,
+        )
+        self.y_val_test =  y_val_test
+  
+        X_val, X_test, y_val_, y_test = train_test_split(
+            X_val_test,
+            y_val_test,
+            test_size=self.test_size / (self.val_size + self.test_size),
+            stratify=y_val_test.values,
+            random_state=0,
+        )
+
+        # Convert train and val to torch plus convert str labels to int
+        y_train = [self.conversion_dict[i] for i in y_train_.values]
+        y_val = [self.conversion_dict[i] for i in y_val_.values]
+        X_train = torch.from_numpy(X_train.todense())
+        X_val = torch.from_numpy(X_val.todense())
+        y_train = torch.from_numpy(np.array(y_train))
+        y_val  = torch.from_numpy(np.array(y_val))
+
+        # Convert test ID and OOD data to dense and concatenate
+        data_test = torch.from_numpy(X_test.todense())
+        y_test_ = [self.conversion_dict[i] for i in y_test.values]
+        labels_test = torch.from_numpy(np.array(y_test_))
+        data_OOD = torch.from_numpy(self.data_OOD.todense())
+        self.data_OOD = data_OOD
+        y_OOD_ = [self.conversion_dict[i] for i in self.labels_OOD.values]
+        labels_OOD = torch.from_numpy(np.array(y_OOD_))
+        data_test_total = torch.cat((data_test, data_OOD), 0)
+        labels_test_total = torch.cat((labels_test, labels_OOD), 0)
+
+        # Make an OOD indicator file
+        OOD_ind = pd.DataFrame(
+        [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
+        )
+        OOD_ind.to_csv(
+            self.data_dir
+            + "OOD_ind_COPD"
+            + "_dataset_"
+            + str(self.name)
+            + ".csv"
+        )
+        return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
+
+    def check_for_OOD(self, y_train, y_test):
+        """Check if OOD labels/celltypes are present in train/test split
+
+        Parameters
+        ----------
+        y_train
+        y_test
+
+        Returns
+        -------
+        ind: boolean
+            Are there OOD labels?
+        idx_OOD: list
+            boolean list: TRUE/FALSE this label is OOD
+        """
+        un_test = np.unique(y_test)
+        un_train = np.unique(y_train)
+        self.un_test = un_test
+        self.un_train = un_train
+
+        if sum([t not in un_train for t in un_test]) > 0:
+            ind = True
+            idx_OOD = pd.DataFrame([-1 if t not in un_train else 1 for t in y_test.numpy()])
+        else:
+            ind = False
+            idx_OOD = pd.DataFrame([None])
+        return ind, idx_OOD
+
+    def setup(self,stage):
+        """NOTE: also slightly different that other functions: all in one setup function"""
+        # Read in data and perform filtering
+        self.prepare_data()
+
+        # Perform train-test split
+        X_train, X_val, X_test, y_train, y_val, y_test = self.pick_scenario()
+        self.X_train = X_train
+        self.X_val = X_val
+        self.X_test = X_test
+        
+        self.data_test = BaseDataset( # Already in dense format since concatenating with OOD data
+            X_test,
+            y_test,
+        )
+
+        self.data_train = BaseDataset(
+            X_train,
+            y_train,
+        )
+
+        self.data_val = BaseDataset(
+            X_val,
+            y_val,
+        )
+
+        OOD_idx, OOD_ind = self.check_for_OOD(y_train, y_test)
+        self.OOD_idx = OOD_idx
+        self.OOD_ind = OOD_ind
+        if self.verbose:
+            print("OOD celltypes?", OOD_idx)
+            if OOD_ind.iloc[0,0] != None:
+                print("Size OOD data?", sum([1 for i in OOD_ind.iloc[:,0].values if i == -1]))
+            print(" \n")
+
+        OOD_ind.to_csv(
+            self.data_dir
+            + "OOD_ind_COPD"
+            + "_celltypes_"
+            + str(self.name)
+            + ".csv"
+        )
+
+    def train_dataloader(self):
+            return DataLoader(self.data_train, batch_size=self.batch, num_workers=self.cpus, shuffle = True)
+
+    def val_dataloader(self):
+        return DataLoader(self.data_val, batch_size=self.batch, num_workers=self.cpus)
+
+    def test_dataloader(self):
+        test_loader = DataLoader(
+            self.data_test, batch_size=self.batch, num_workers=self.cpus
+        )
+        return [test_loader]
+
+    def predict_dataloader(self):
+        predict_loader = DataLoader(
+            self.data_test, batch_size=self.batch, num_workers=self.cpus
+        )
+        return [predict_loader]
+    def n_classes(self):
+        """Returns the number of unique label classes"""
+        return len(list((self.conversion_dict.keys())))
+    def n_features(self):
+        """Return the number od features"""
+        h5ad = sc.read_h5ad(self.data_dir + self.data_file)
+        data = sparse.csr_matrix(h5ad.X)
+        if self.verbose:
+            print('n_features dataloader', data.shape[1] )
+        return data.shape[1]
+    
+    def display_data_characteristics(self):
+        print("\n")
+        print('n° celltypes filtered OOD', len(self.celltypes_filtered_OOD))
+        print('n° celltypes filtered ID', len(self.celltypes_filtered_ID))
+        print('Shape ID data', self.data_ID.shape)
+        print('Shape OOD data', self.data_OOD.shape)
+        print('n celltypes OOD', len(np.unique(self.labels_OOD)))
+        print('n celltypes ID', len(np.unique(self.labels_ID)))

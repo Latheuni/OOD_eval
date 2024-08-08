@@ -171,6 +171,7 @@ def load_dataset(config_file, train = True):
             return dataset, OOD_label_dataset, OOD_label_celltype
         else:
             return dataset
+
     elif dataset_config["name"] == "Lung":
         dataset = LitLungDataModule(
             dataset_config["data_dir"],
@@ -238,7 +239,41 @@ def load_dataset(config_file, train = True):
             return dataset, OOD_label_dataset, OOD_label_celltype
         else: 
             return dataset
-
+    
+    elif dataset_config["name"] == "COPD":
+        dataset = LitCOPDDataModule(
+            dataset_config["data_dir"],
+            dataset_config["data_file"],
+            dataset_config["label_conversion_file"],
+            dataset_config["scenario"],
+            dataset_config["batch_size"],
+            dataset_config["val_size"],
+            dataset_config["test_size"],
+            training_config["cpus"],
+            main_config["name"],
+            verbose=main_config["verbose"],
+        )
+        if not train:
+            OOD_label_dataset = pd.read_csv(
+                dataset_config["data_dir"]
+                + "OOD_ind_COPD"
+                + "_dataset_"
+                + main_config["name"]
+                + ".csv",
+                index_col=0,
+            )
+            OOD_label_celltype = pd.read_csv(
+                dataset_config["data_dir"]
+                + "OOD_ind_COPD"
+                + "_celltypes_"
+                + main_config["name"]
+                + ".csv",
+                index_col=0,
+            )
+            return dataset, OOD_label_dataset, OOD_label_celltype
+        else: 
+            return dataset
+            
 def load_network(config_file, n_features, n_classes):
     main_config, dataset_config, network_config, training_config = read_config(
         config_file
@@ -282,6 +317,8 @@ def evaluate_OOD(
     auroc_dataset, aupr_in_dataset, aupr_out_dataset, fpr_dataset = (
         auc_and_fpr_recall(conf, OOD_ind, 0.95)
     )
+    print(len(OOD_ind))
+    print(len(ytrue))
     acc_OOD, acc_ID, bacc_OOD, bacc_ID = general_metrics(
         OOD_ind,
         pred,

@@ -20,6 +20,10 @@ class NormalizingFlowDensity(nn.Module):
             self.transforms = nn.Sequential(*(
                 Radial(dim) for _ in range(flow_length)
             ))
+        elif self.flow_type == 'planar_flow':
+            self.transforms = nn.Sequential(*(
+                Planar(dim) for _ in range(flow_length)
+            ))
         elif self.flow_type == 'iaf_flow':
             self.transforms = nn.Sequential(*(
                 affine_autoregressive(dim, hidden_dims=[128, 128]) for _ in range(flow_length)

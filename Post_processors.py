@@ -8,7 +8,12 @@ import faiss
 # Adapted from code OpenOOD
 # NOTE to self: post processing is something completely different from testing/predicting
 class base_postprocessor:
+    def __init__(self):
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
     def postprocess(self, net, data):
+        net.to(self.device)
+        data = data.to(self.device)
         output = net(data)
         scores = torch.softmax(output, dim=1)
         conf, pred = torch.max(scores, dim=1)

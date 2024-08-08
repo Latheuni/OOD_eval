@@ -142,7 +142,7 @@ def train_step(config_file, train_test_together=False):
             checkpoint_val = ModelCheckpoint(
                 monitor="val_loss",
                 dirpath=main_config["output_dir"] + main_config["name"] + "/",
-                filename=main_config["name"] + str(i) + "_best_model",
+                filename=main_config["name"] + '_' + str(i) + "_best_model",
             )
             device_stats = DeviceStatsMonitor()
             lr_monitor = LearningRateMonitor(logging_interval="step")
@@ -172,11 +172,26 @@ def train_step(config_file, train_test_together=False):
     else:
         if training_config["OOD_strategy"] == "Posterior":
             N = get_N(labels, n_classes) 
-
             # Define network and lightning module
-            network = Posterior_network(N, n_features, n_classes, network_config["nodes_per_layer"], network_config["num_hidden_layer"], "relu", network_config["model"])
-            model = LitPostNN(N, network,n_classes, batch_size = dataset_config['batch_size'], lr = training_config["learning_rate"] )
+            if "n_density" in training_config.keys():
+                if "density_type" in training_config.keys():
+                    network = Posterior_network(N, n_features, n_classes, network_config["nodes_per_layer"], network_config["num_hidden_layer"], "relu", network_config["model"], n_density = training_config["n_density"], density_type =training_config["density_type"] )
+                else:
+                    network = Posterior_network(N, n_features, n_classes, network_config["nodes_per_layer"], network_config["num_hidden_layer"], "relu", network_config["model"], n_density = training_config["n_density"])
+            else:
+                if "density_type" in training_config.keys():
+                    network = Posterior_network(N, n_features, n_classes, network_config["nodes_per_layer"], network_config["num_hidden_layer"], "relu", network_config["model"], density_type =training_config["density_type"])
 
+                else:
+                    network = Posterior_network(N, n_features, n_classes, network_config["nodes_per_layer"], network_config["num_hidden_layer"], "relu", network_config["model"])
+            
+            
+            if "regr" in training_config.keys():
+                model = LitPostNN(N, network,n_classes, batch_size = dataset_config['batch_size'], lr = training_config["learning_rate"], regr = training_config["regr"])
+            else:
+                model = LitPostNN(N, network,n_classes, batch_size = dataset_config['batch_size'], lr = training_config["learning_rate"] )
+
+           
         else:
             # Define network
             network = load_network(config_file, n_features,  n_classes)
@@ -253,10 +268,11 @@ def test_step(config_file, trainer, dataset):
         print("Reading in model and setting up the analysis")
     __ , OOD_label_dataset, OOD_label_celltype = load_dataset(config_file, train= False)
     print('OOD in in main', OOD_label_celltype)
+    print('OOD label dataset', len(OOD_label_dataset))
     test_X = dataset.data_test.data
-    print('shape test_X man', test_X.shape)
+    print('shape test_X main', test_X.shape)
     y_true = dataset.data_test.labels
-    
+    print("shape y_true", y_true.shape)
     if training_config["OOD_strategy"] == "Ensembles":
         #Postprocess networks
         postprocessor = Ensemble_postprocessor(main_config["output_dir"] + main_config["name"], main_config["name"] )
@@ -378,8 +394,14 @@ def test_step(config_file, trainer, dataset):
                 print('Evaluating OOD celltypes')
 
             if not np.isnan(OOD_label_celltype.iloc[0,0]):
+                if not isinstance(conf, (np.ndarray, np.matrix)):
+                    conf = conf.detach().cpu().numpy()
+                elif not isinstance(pred, np.ndarray):
+                    pred = pred.detach().cpu().numpy()
+                elif not isinstance(ytrue, np.ndarray):
+                    ytrue = y_true.detach().cpu().numpy()
                 results_dict = evaluate_OOD(
-                    conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
+                    conf, pred, y_true, OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
                 )
             else:
                 results_dict["celltype"] = None
@@ -559,8 +581,10 @@ elif args.Run_step == "all":
         + main_config["name"]
         + "_ytrue.csv",
     )
+    if not isinstance(predictions, np.ndarray):
+        predictions = predictions.detach().cpu().numpy()
     save_numpy_array(
-        predictions.detach().cpu().numpy(),
+        predictions,
         main_config["output_dir"]
         + main_config["name"]
         + "/"

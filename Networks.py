@@ -139,7 +139,7 @@ class Posterior_network(nn.Sequential):  # Deep Linear network
         super(Posterior_network, self).__init__()
         self.output_dim = output_dim
         self.density_type = density_type
-        self.latent_dim = nodes_per_layer #TODO:
+        self.latent_dim = output_dim #set to number of classes
         self.loss_name = loss
 
         ## Define network (as self.predictor)
@@ -151,10 +151,13 @@ class Posterior_network(nn.Sequential):  # Deep Linear network
            
         ## Define density_estimator/flow
         if self.density_type == 'planar_flow':
+            print('planar flow')
             self.density_estimation = nn.ModuleList([NormalizingFlowDensity(self.latent_dim, n_density, flow_type=density_type) for c in range(output_dim)])
         elif self.density_type == 'radial_flow':
+            print('radialflow')
             self.density_estimation = nn.ModuleList([NormalizingFlowDensity(self.latent_dim, n_density, flow_type= self.density_type) for _ in range(output_dim)])
         elif self.density_type == 'iaf_flow':
+            print('iaf flow')
             self.density_estimation = nn.ModuleList([NormalizingFlowDensity(self.latent_dim, n_density, flow_type=density_type) for c in range(output_dim)])
         else:
             raise NotImplementedError
@@ -171,13 +174,13 @@ class Posterior_network(nn.Sequential):  # Deep Linear network
             self.N, self.budget_function = __budget_functions__[budget_function](N), budget_function
         else:
             raise NotImplementedError
-        self.batch_norm = nn.BatchNorm1d(num_features=self.latent_dim) #TODO check this
+        self.batch_norm = nn.BatchNorm1d(num_features=self.output_dim) #TODO check this
 
 
     def forward(self, x, return_latent = False): #Note, during training you need to optimize on the embedded space
         N = self.N
         batch_size = x.size(0)
-        scores, zk = self.predictor(x, return_feature = True) #will return the latent space as well in zk
+        zk, _ = self.predictor(x, return_feature = True) #will return the latent space as well in zk
         zk = self.batch_norm(zk)
         log_q_zk = torch.zeros((batch_size, self.output_dim)).to(zk.device.type)
         alpha = torch.zeros((batch_size, self.output_dim)).to(zk.device.type)

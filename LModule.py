@@ -253,6 +253,7 @@ class LitPostNN(L.LightningModule):
         # Make hot encodings
         y_hot = torch.zeros(y.shape[0], self.output_dim)
         y = y.to('cpu')
+        y_hot.scatter_(1, torch.unsqueeze(y,1), 1)
         y_hot = y_hot.to(self.dev)
         y = y.to(self.dev)
 
@@ -263,9 +264,10 @@ class LitPostNN(L.LightningModule):
         elif self.loss_name == "UCE":
             alpha, scores = self.NN(x)
             val_loss = self.loss(alpha,y_hot)
-
+        print(scores)
         _, pred = torch.max(scores, dim=1) 
         # Log
+        print('val loss', val_loss)
         self.log("val_loss", val_loss, on_step=True)
         self.val_accuracy(pred, y)
         self.val_balanced_accuracy(pred, y)
@@ -273,11 +275,8 @@ class LitPostNN(L.LightningModule):
         self.log(
             "validation balanced accuracy", self.val_balanced_accuracy, on_step=True
         )
-        print('val acc', self.val_accuracy)
-        print('y', y)
-        print('pred', pred)
-        print(len(pred))
-        print(sum([i == 4 for i in pred]))
+
+        print(np.unique(pred.detach().cpu().numpy()))
 
 
     def test_step(self, batch, batch_idx):
@@ -286,6 +285,7 @@ class LitPostNN(L.LightningModule):
         # Make hot encodings
         y_hot = torch.zeros(y.shape[0], self.output_dim)
         y = y.to('cpu')
+        y_hot.scatter_(1, torch.unsqueeze(y,1), 1)
         y_hot = y_hot.to(self.dev)
         y = y.to(self.dev)
 

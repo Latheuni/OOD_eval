@@ -36,7 +36,7 @@ class UCE_loss(nn.Module):
         super(UCE_loss, self).__init__()
         self.output_dim = output_dim
         self.regr = regr
-        #TODO add self.regr and find out what this is
+
     def forward(self, alpha, soft_output): #Need to check what soft output, UPDATE it is Y_train_hot = torch.zeros(Y_train.shape[0], train_loader.dataset.output_dim) - Y_train_hot.scatter_(1, Y_train, 1) NEEDS TO BE A ONE HOT ENCODING
         alpha_0 = alpha.sum(1).unsqueeze(-1).repeat(1, self.output_dim)
         entropy_reg = Dirichlet(alpha).entropy()
