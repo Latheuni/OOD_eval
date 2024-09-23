@@ -1330,17 +1330,14 @@ class LitCOPDDataModule(L.LightningDataModule):
             #     with open(self.data_dir + "COPD_control_patients.json") as json_file:
             #         self.patients = json.loads(json_file.read())
 
-        self.data_ID, self.obs_ID, self.data_OOD, self.obs_OOD = self.filter_counts_h5ad(sparse.csr_matrix(h5ad.X), h5ad.obs)
-        self.labels_ID = self.obs_ID['Subclass_Cell_Identity']
-        self.labels_OOD = self.obs_OOD['Subclass_Cell_Identity']
-
-        
-
+       
+        self.data_ID, self.labels_ID, self.data_OOD, self.labels_OOD = self.filter_counts_h5ad(sparse.csr_matrix(h5ad.X), h5ad.obs)
        
         
     def filter_counts_h5ad(self, data, obs):
         """Note this function is structured slightly different than the other modules, filtering of everything starts as beginning step"""
-       
+
+        # Select correct subset of data
         if self.scenario.startswith('patient'):
             scen_obs = obs.iloc[[i == "Control" for i in obs["Disease_Identity"]],:]
             scen_data = data[[i == "Control" for i in obs["Disease_Identity"]],:]
@@ -1355,112 +1352,248 @@ class LitCOPDDataModule(L.LightningDataModule):
 
             scen_obs_fp = scen_obs.iloc[[i not in self.patients_remove for i in scen_obs["Subject_Identity"]],:]
             scen_data_fp = scen_data[[i not in self.patients_remove for i in scen_obs["Subject_Identity"]],:]
+            self.data = scen_data_fp
 
         elif self.scenario == "COPD":
             scen_obs_fp = obs.iloc[[i in ["Control", "COPD"] for i in obs["Disease_Identity"]],:]
             scen_data_fp = data[[i in ["Control", "COPD"] for i in obs["Disease_Identity"]],:]
+            self.data = scen_data_fp
 
         elif self.scenario == "IPF":
             scen_obs_fp = obs.iloc[[i in ["Control", "IPF"] for i in obs["Disease_Identity"]],:]
             scen_data_fp = data[[i in ["Control", "IPF"] for i in obs["Disease_Identity"]],:]
+            self.data = scen_data_fp
+
+        elif self.scenario.startswith('s_'):
+            scen_obs = obs.iloc[[i == "Control" for i in obs["Disease_Identity"]],:]
+            scen_data = data[[i == "Control" for i in obs["Disease_Identity"]],:]
+            self.data = scen_data
         else:
             print('Invalid scenario')
         
-        self.data = scen_data_fp
         
         
+        # Split into ID and OOD data
         if self.scenario.startswith('patient'):
             current_patient = self.scenario.split('_')[-1]
             data_OOD = scen_data_fp[scen_obs_fp["Subject_Identity"].values == self.patients[current_patient],:]
-            obs_OOD = scen_obs_fp.iloc[scen_obs_fp["Subject_Identity"].values == self.patients[current_patient],:]
+            obs_OOD = scen_obs_fp.iloc[scen_obs_fp["Subject_Identity"].values == self.patients[current_patient],:]["Subclass_Cell_Identity"]
             data_ID = scen_data_fp[scen_obs_fp["Subject_Identity"].values != self.patients[current_patient],:]
-            obs_ID = scen_obs_fp.iloc[scen_obs_fp["Subject_Identity"].values != self.patients[current_patient],:]
+            obs_ID = scen_obs_fp.iloc[scen_obs_fp["Subject_Identity"].values != self.patients[current_patient],:]["Subclass_Cell_Identity"]
+
+            # Filter out cell types with less than self.min_celltypes observations
+            # For OOD
+            labels_OOD = obs_OOD.values
+            s = labels_OOD.value_counts() < self.min_celltypes
+            celltype_to_filter = s.index[s].to_list()
+            obs_OOD_fc = obs_OOD.iloc[[i not in celltype_to_filter for i in obs_OOD.values]]
+            data_OOD_fc = data_OOD[[i not in celltype_to_filter for i in obs_OOD.values],:]
+            self.celltypes_filtered_OOD = celltype_to_filter
+    
+
+            # For ID
+            labels_ID = obs_ID.values
+            s = labels_ID.value_counts() < self.min_celltypes
+            celltype_to_filter = s.index[s].to_list()
+            obs_ID_fc = obs_ID.iloc[[i not in celltype_to_filter for i in obs_ID]]
+            data_ID_fc = data_ID[[i not in celltype_to_filter for i in obs_ID],:]
+            self.celltypes_filtered_ID = celltype_to_filter
 
         elif self.scenario == "COPD":
-            obs_OOD = scen_obs_fp.iloc[[i == "COPD" for i in scen_obs_fp["Disease_Identity"]],:]
+            obs_OOD = scen_obs_fp.iloc[[i == "COPD" for i in scen_obs_fp["Disease_Identity"]],:]["Subclass_Cell_Identity"]
             data_OOD = scen_data_fp[[i == "COPD" for i in scen_obs_fp["Disease_Identity"]],:]
-            obs_ID  = scen_obs_fp.iloc[[i == "Control" for i in scen_obs_fp["Disease_Identity"]],:]
+            obs_ID  = scen_obs_fp.iloc[[i == "Control" for i in scen_obs_fp["Disease_Identity"]],:]["Subclass_Cell_Identity"]
             data_ID = scen_data_fp[[i ==  "Control" for i in scen_obs_fp["Disease_Identity"]],:]
+
+            # Filter out cell types with less than self.min_celltypes observations
+            # For OOD
+            labels_OOD = obs_OOD.values
+            s = labels_OOD.value_counts() < self.min_celltypes
+            celltype_to_filter = s.index[s].to_list()
+            obs_OOD_fc = obs_OOD.iloc[[i not in celltype_to_filter for i in obs_OOD.values]]
+            data_OOD_fc = data_OOD[[i not in celltype_to_filter for i in obs_OOD.values],:]
+            self.celltypes_filtered_OOD = celltype_to_filter
+    
+
+            # For ID
+            labels_ID = obs_ID.values
+            s = labels_ID.value_counts() < self.min_celltypes
+            celltype_to_filter = s.index[s].to_list()
+            obs_ID_fc = obs_ID.iloc[[i not in celltype_to_filter for i in obs_ID]]
+            data_ID_fc = data_ID[[i not in celltype_to_filter for i in obs_ID],:]
+            self.celltypes_filtered_ID = celltype_to_filter
         elif self.scenario == "IPF":
-            obs_OOD = scen_obs_fp.iloc[[i == "IPF" for i in scen_obs_fp["Disease_Identity"]],:]
+            obs_OOD = scen_obs_fp.iloc[[i == "IPF" for i in scen_obs_fp["Disease_Identity"]],:]["Subclass_Cell_Identity"]
             data_OOD = scen_data_fp[[i == "IPF" for i in scen_obs_fp["Disease_Identity"]],:]
-            obs_ID  = scen_obs_fp.iloc[[i == "Control" for i in scen_obs_fp["Disease_Identity"]],:]
+            obs_ID  = scen_obs_fp.iloc[[i == "Control" for i in scen_obs_fp["Disease_Identity"]],:]["Subclass_Cell_Identity"]
             data_ID = scen_data_fp[[i ==  "Control" for i in scen_obs_fp["Disease_Identity"]],:]
+
+            # Filter out cell types with less than self.min_celltypes observations
+            # For OOD
+            labels_OOD = obs_OOD.values
+            s = labels_OOD.value_counts() < self.min_celltypes
+            celltype_to_filter = s.index[s].to_list()
+            obs_OOD_fc = obs_OOD.iloc[[i not in celltype_to_filter for i in obs_OOD.values]]
+            data_OOD_fc = data_OOD[[i not in celltype_to_filter for i in obs_OOD.values],:]
+            self.celltypes_filtered_OOD = celltype_to_filter
+    
+
+            # For ID
+            labels_ID = obs_ID.values
+            s = labels_ID.value_counts() < self.min_celltypes
+            celltype_to_filter = s.index[s].to_list()
+            obs_ID_fc = obs_ID.iloc[[i not in celltype_to_filter for i in obs_ID]]
+            data_ID_fc = data_ID[[i not in celltype_to_filter for i in obs_ID],:]
+            self.celltypes_filtered_ID = celltype_to_filter
+        elif self.scenario.startswith('s_'):
+            # Filter with less than 10 celltypes
+            labels_obs = scen_obs["Subclass_Cell_Identity"]
+            print(self.min_celltypes/self.test_size)
+            s = labels_obs.value_counts() < self.min_celltypes/self.test_size
+            celltype_to_filter = s.index[s].to_list()
+            scen_obs_ = scen_obs.iloc[[i not in celltype_to_filter for i in scen_obs["Subclass_Cell_Identity"]],:]
+            scen_data_= scen_data[[i not in celltype_to_filter for i in scen_obs["Subclass_Cell_Identity"]],:]
+
+            # Split the data
+            data_ID, data_OOD, obs_ID, obs_OOD = train_test_split(
+            scen_data_,
+            scen_obs_["Subclass_Cell_Identity"],
+            test_size=self.test_size,
+            stratify=scen_obs_["Subclass_Cell_Identity"],
+            random_state=0)
+
+
         else:
             print('Invalid scenario')
 
         # Filter out cell types with less than self.min_celltypes observations
         # For OOD
-        labels_OOD = obs_OOD["Subclass_Cell_Identity"].values
-        s = labels_OOD.value_counts() < self.min_celltypes
-        celltype_to_filter = s.index[s].to_list()
-        obs_OOD_fc = obs_OOD.iloc[[i not in celltype_to_filter for i in obs_OOD["Subclass_Cell_Identity"].values],:]
-        data_OOD_fc = data_OOD[[i not in celltype_to_filter for i in obs_OOD["Subclass_Cell_Identity"].values],:]
-        self.celltypes_filtered_OOD = celltype_to_filter
-  
+        # Exclude OOD labels ID data
+        if self.scenario.startswith('s_'):
+            len_tot = len(scen_obs["Subclass_Cell_Identity"])
 
-        # For ID
-        labels_ID = obs_ID["Subclass_Cell_Identity"]
-        s = labels_ID.value_counts() < self.min_celltypes
-        celltype_to_filter = s.index[s].to_list()
-        obs_ID_fc = obs_ID.iloc[[i not in celltype_to_filter for i in obs_ID["Subclass_Cell_Identity"]],:]
-        data_ID_fc = data_ID[[i not in celltype_to_filter for i in obs_ID["Subclass_Cell_Identity"]],:]
-        self.celltypes_filtered_ID = celltype_to_filter
+            # Identify labels to exclude
+            if self.scenario.split('_')[1] == "10":
+                n = int(round(len_tot*0.1))
+                cs = obs_ID.value_counts(ascending = True).cumsum()
+                idx = np.where([i > n for i in cs])[0][0]
+                labels_to_exclude = list(cs[:idx].index)
+            elif self.scenario.split('_')[1] == "15":
+                n = int(round(len_tot*0.15))
+                cs = obs_ID.value_counts(ascending = True).cumsum()
+                idx = np.where([i > n for i in cs])[0][0]
+                labels_to_exclude = list(cs[:idx].index)
+            elif self.scenario.split('_')[1] == "5":
+                n = int(round(len_tot*0.05))
+                cs = obs_ID.value_counts(ascending = True).cumsum()
+                idx = np.where([i > n for i in cs])[0][0]
+                labels_to_exclude = list(cs[:idx].index)
+            elif self.scenario.split('_')[1] == "2":
+                n = int(round(len_tot*0.02))
+                cs = obs_ID.value_counts(ascending = True).cumsum()
+                idx = np.where([i > n for i in cs])[0][0]
+                labels_to_exclude = list(cs[:idx].index)
 
-        return data_ID_fc, obs_ID_fc, data_OOD_fc, obs_OOD_fc
+            self.OOD_labels_excluded = labels_to_exclude
+            obs_ID_fcs = obs_ID.iloc[[i not in labels_to_exclude for i in obs_ID.values]]
+            data_ID_fcs = data_ID[[i not in labels_to_exclude for i in obs_ID.values],:]
+
+            print('length labels to exclude', len(labels_to_exclude))
+            print('unique obs_id_FCS', len(np.unique(obs_ID_fcs)))
+            print('unique obs_ood_FC', len(np.unique(obs_OOD)))
+            return data_ID_fcs, obs_ID_fcs, data_OOD, obs_OOD
+
+        else:
+            return data_ID_fc, obs_ID_fc, data_OOD_fc, obs_OOD_fc
 
     def pick_scenario(self):
-        train_ratio = 1 - (self.val_size + self.test_size)
-        
-        # Split "ID" data
-        X_train, X_val_test, y_train_, y_val_test = train_test_split(
-            self.data_ID,
-            self.labels_ID,
-            test_size=1-train_ratio,
-            stratify=self.labels_ID.values,
-            random_state=0,
-        )
-        self.y_val_test =  y_val_test
-  
-        X_val, X_test, y_val_, y_test = train_test_split(
-            X_val_test,
-            y_val_test,
-            test_size=self.test_size / (self.val_size + self.test_size),
-            stratify=y_val_test.values,
-            random_state=0,
-        )
+        if self.scenario.startswith('s_'):
+            X_train, X_val, y_train_, y_val_ = train_test_split(
+                self.data_ID,
+                self.labels_ID,
+                test_size= self.val_size,
+                stratify=self.labels_ID.values,
+                random_state=0,
+            )
+    
+            # Convert train and val to torch plus convert str labels to int
+            y_train = [self.conversion_dict[i] for i in y_train_.values]
+            y_val = [self.conversion_dict[i] for i in y_val_.values]
+            X_train = torch.from_numpy(X_train.todense())
+            X_val = torch.from_numpy(X_val.todense())
+            y_train = torch.from_numpy(np.array(y_train))
+            y_val  = torch.from_numpy(np.array(y_val))
 
-        # Convert train and val to torch plus convert str labels to int
-        y_train = [self.conversion_dict[i] for i in y_train_.values]
-        y_val = [self.conversion_dict[i] for i in y_val_.values]
-        X_train = torch.from_numpy(X_train.todense())
-        X_val = torch.from_numpy(X_val.todense())
-        y_train = torch.from_numpy(np.array(y_train))
-        y_val  = torch.from_numpy(np.array(y_val))
 
-        # Convert test ID and OOD data to dense and concatenate
-        data_test = torch.from_numpy(X_test.todense())
-        y_test_ = [self.conversion_dict[i] for i in y_test.values]
-        labels_test = torch.from_numpy(np.array(y_test_))
-        data_OOD = torch.from_numpy(self.data_OOD.todense())
-        self.data_OOD = data_OOD
-        y_OOD_ = [self.conversion_dict[i] for i in self.labels_OOD.values]
-        labels_OOD = torch.from_numpy(np.array(y_OOD_))
-        data_test_total = torch.cat((data_test, data_OOD), 0)
-        labels_test_total = torch.cat((labels_test, labels_OOD), 0)
+            # Convert OOD data to dense 
+            data_OOD = torch.from_numpy(self.data_OOD.todense())
+            self.data_OOD = data_OOD
+            y_OOD_ = [self.conversion_dict[i] for i in self.labels_OOD.values]
+            labels_OOD = torch.from_numpy(np.array(y_OOD_))
 
-        # Make an OOD indicator file
-        OOD_ind = pd.DataFrame(
-        [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
-        )
-        OOD_ind.to_csv(
-            self.data_dir
-            + "OOD_ind_COPD"
-            + "_dataset_"
-            + str(self.name)
-            + ".csv"
-        )
-        return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
+            OOD_ind = pd.DataFrame(
+                [-1 if i in [self.conversion_dict[j] for j in self.OOD_labels_excluded] else 1 for i in labels_OOD]
+            )
+            OOD_ind.to_csv(
+                self.data_dir
+                + "OOD_ind_COPD"
+                + "_dataset_"
+                + str(self.name)
+                + ".csv"
+            )
+            return X_train, X_val, self.data_OOD, y_train, y_val, labels_OOD
+
+        else:
+            train_ratio = 1 - (self.val_size + self.test_size)
+            # Split "ID" data
+            X_train, X_val_test, y_train_, y_val_test = train_test_split(
+                self.data_ID,
+                self.labels_ID,
+                test_size=1-train_ratio,
+                stratify=self.labels_ID.values,
+                random_state=0,
+            )
+            self.y_val_test =  y_val_test
+    
+            X_val, X_test, y_val_, y_test = train_test_split(
+                X_val_test,
+                y_val_test,
+                test_size=self.test_size / (self.val_size + self.test_size),
+                stratify=y_val_test.values,
+                random_state=0,
+            )
+
+            # Convert train and val to torch plus convert str labels to int
+            y_train = [self.conversion_dict[i] for i in y_train_.values]
+            y_val = [self.conversion_dict[i] for i in y_val_.values]
+            X_train = torch.from_numpy(X_train.todense())
+            X_val = torch.from_numpy(X_val.todense())
+            y_train = torch.from_numpy(np.array(y_train))
+            y_val  = torch.from_numpy(np.array(y_val))
+
+            # Convert test ID and OOD data to dense and concatenate
+            data_test = torch.from_numpy(X_test.todense())
+            y_test_ = [self.conversion_dict[i] for i in y_test.values]
+            labels_test = torch.from_numpy(np.array(y_test_))
+            data_OOD = torch.from_numpy(self.data_OOD.todense())
+            self.data_OOD = data_OOD
+            y_OOD_ = [self.conversion_dict[i] for i in self.labels_OOD.values]
+            labels_OOD = torch.from_numpy(np.array(y_OOD_))
+            data_test_total = torch.cat((data_test, data_OOD), 0)
+            labels_test_total = torch.cat((labels_test, labels_OOD), 0)
+
+            # Make an OOD indicator file
+            OOD_ind = pd.DataFrame(
+                [1] * data_test.size(dim=0) + [-1] * data_OOD.size(dim=0)
+            )
+            OOD_ind.to_csv(
+                self.data_dir
+                + "OOD_ind_COPD"
+                + "_dataset_"
+                + str(self.name)
+                + ".csv"
+            )
+            return X_train, X_val, data_test_total, y_train, y_val, labels_test_total
 
     def check_for_OOD(self, y_train, y_test):
         """Check if OOD labels/celltypes are present in train/test split
@@ -1563,8 +1696,6 @@ class LitCOPDDataModule(L.LightningDataModule):
     
     def display_data_characteristics(self):
         print("\n")
-        print('n° celltypes filtered OOD', len(self.celltypes_filtered_OOD))
-        print('n° celltypes filtered ID', len(self.celltypes_filtered_ID))
         print('Shape ID data', self.data_ID.shape)
         print('Shape OOD data', self.data_OOD.shape)
         print('n celltypes OOD', len(np.unique(self.labels_OOD)))

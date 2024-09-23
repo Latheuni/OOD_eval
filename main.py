@@ -281,6 +281,8 @@ def test_step(config_file, trainer, dataset):
         
         # Calculate Measures
         results_dict = {}
+
+        
         if verbose:
             print(' \n')
             print('Evaluating OOD dataset')
@@ -289,18 +291,19 @@ def test_step(config_file, trainer, dataset):
             conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
         )
 
-        if verbose:
-            print(' \n')
-            print('Evaluating OOD celltypes')
-
-        if not np.isnan(OOD_label_celltype.iloc[0,0]):
-            results_dict = evaluate_OOD(
-                conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
-            )
-        else:
-            results_dict["celltype"] = None
+        if not dataset_config["scenario"].startswith('s_'):
             if verbose:
-                print("No OOD celltypes, so no celltype analysis")
+                print(' \n')
+                print('Evaluating OOD celltypes')
+
+            if not np.isnan(OOD_label_celltype.iloc[0,0]):
+                results_dict = evaluate_OOD(
+                    conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
+                )
+            else:
+                results_dict["celltype"] = None
+                if verbose:
+                    print("No OOD celltypes, so no celltype analysis")
         
         # Save results
         save_dict_to_json(
@@ -357,19 +360,19 @@ def test_step(config_file, trainer, dataset):
                 results_dict_ = evaluate_OOD(
                     conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict_
                 )
-
-                if verbose:
-                    print(' \n')
-                    print('Evaluating OOD celltypes')
-
-                if not np.isnan(OOD_label_celltype.iloc[0,0]):
-                    results_dict_ = evaluate_OOD(
-                        conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict_
-                    )
-                else:
-                    results_dict_["celltype"] = None
+                if not dataset_config["scenario"].startswith('s_'):
                     if verbose:
-                        print("No OOD celltypes, so no celltype analysis")
+                        print(' \n')
+                        print('Evaluating OOD celltypes')
+
+                    if not np.isnan(OOD_label_celltype.iloc[0,0]):
+                        results_dict_ = evaluate_OOD(
+                            conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict_
+                        )
+                    else:
+                        results_dict_["celltype"] = None
+                        if verbose:
+                            print("No OOD celltypes, so no celltype analysis")
                 results_dict[k] = results_dict_
             
             
@@ -388,25 +391,25 @@ def test_step(config_file, trainer, dataset):
             results_dict = evaluate_OOD(
                 conf, pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
             )
-            
-            if verbose:
-                print(' \n')
-                print('Evaluating OOD celltypes')
-
-            if not np.isnan(OOD_label_celltype.iloc[0,0]):
-                if not isinstance(conf, (np.ndarray, np.matrix)):
-                    conf = conf.detach().cpu().numpy()
-                elif not isinstance(pred, np.ndarray):
-                    pred = pred.detach().cpu().numpy()
-                elif not isinstance(ytrue, np.ndarray):
-                    ytrue = y_true.detach().cpu().numpy()
-                results_dict = evaluate_OOD(
-                    conf, pred, y_true, OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
-                )
-            else:
-                results_dict["celltype"] = None
+            if not dataset_config["scenario"].startswith('s_'):
                 if verbose:
-                    print("No OOD celltypes, so no celltype analysis")
+                    print(' \n')
+                    print('Evaluating OOD celltypes')
+
+                if not np.isnan(OOD_label_celltype.iloc[0,0]):
+                    if not isinstance(conf, (np.ndarray, np.matrix)):
+                        conf = conf.detach().cpu().numpy()
+                    elif not isinstance(pred, np.ndarray):
+                        pred = pred.detach().cpu().numpy()
+                    elif not isinstance(ytrue, np.ndarray):
+                        ytrue = y_true.detach().cpu().numpy()
+                    results_dict = evaluate_OOD(
+                        conf, pred, y_true, OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
+                    )
+                else:
+                    results_dict["celltype"] = None
+                    if verbose:
+                        print("No OOD celltypes, so no celltype analysis")
         else:
             postprocessor = postprocessor_dict[training_config["OOD_strategy"]]
             pred, conf, scores = postprocessor.postprocess( 
@@ -422,19 +425,19 @@ def test_step(config_file, trainer, dataset):
             results_dict = evaluate_OOD(
                 conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
             )
-
-            if verbose:
-                print(' \n')
-                print('Evaluating OOD celltypes')
-
-            if not np.isnan(OOD_label_celltype.iloc[0,0]):
-                results_dict = evaluate_OOD(
-                    conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
-                )
-            else:
-                results_dict["celltype"] = None
+            if not dataset_config["scenario"].startswith('s_'):
                 if verbose:
-                    print("No OOD celltypes, so no celltype analysis")
+                    print(' \n')
+                    print('Evaluating OOD celltypes')
+
+                if not np.isnan(OOD_label_celltype.iloc[0,0]):
+                    results_dict = evaluate_OOD(
+                        conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
+                    )
+                else:
+                    results_dict["celltype"] = None
+                    if verbose:
+                        print("No OOD celltypes, so no celltype analysis")
 
             # R = accuracy_reject_curves(conf.detach().numpy(), y_true.detach().numpy(), pred.detach().numpy())
             # plot_AR_curves(

@@ -23,8 +23,11 @@ class base_postprocessor:
 class dropout_postprocessor:
     def __init__(self, dropout_times = 10):
         self.dropout_times = dropout_times
-
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        
     def postprocess(self, net, data):
+        data = data.to(self.device)
+        net.to(self.device)
         net = net.train()  # to be in training mode
         logits_list = [net.forward(data) for i in range(self.dropout_times)]
         logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
