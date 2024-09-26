@@ -48,6 +48,8 @@ from Metrics import (
 from Post_processors import base_postprocessor, dropout_postprocessor, EBO_postprocessor, Ensemble_postprocessor, KNN_postprocessor, Posterior_postprocessor
 from LModule import *
 from Networks import Posterior_network
+
+
 # Code
 ## basic module
 # Writes predictions in .pt format
@@ -119,7 +121,7 @@ def train_step(config_file, train_test_together=False):
         "EBO": CrossEntropyLoss(),
         "Ensembles": CrossEntropyLoss(),
         "Knn": CrossEntropyLoss(),
-        "Posterior": None, #Has it's own build in loss
+        "Posterior": None, # Has it's own build in loss
     }
     loss_function = loss_dict[training_config["OOD_strategy"]]
     
@@ -248,7 +250,7 @@ def train_step(config_file, train_test_together=False):
         return trainer, DataLoader 
 
 
-def test_step(config_file, trainer, dataset):
+def test_step(config_file, trainer, dataLoader):
     """
     model can be or path to save checkpoint or an actual model
     """
@@ -267,13 +269,22 @@ def test_step(config_file, trainer, dataset):
     if verbose:
         print("Reading in model and setting up the analysis")
     __ , OOD_label_dataset, OOD_label_celltype = load_dataset(config_file, train= False)
-    print('OOD in in main', OOD_label_celltype)
-    print('OOD label dataset', len(OOD_label_dataset))
-    test_X = dataset.data_test.data
-    print('shape test_X main', test_X.shape)
-    y_true = dataset.data_test.labels
-    print("shape y_true", y_true.shape)
+    
+    
+    test_X = dataLoader.test_dataloader()[0] # is a tensor
+    y_true = dataLoader.data_test.labels
+    
+    if verbose:
+        print('OOD in in main', OOD_label_celltype)
+        print('OOD label dataset', len(OOD_label_dataset))
+        print("shape y_true", y_true.shape)
+
+    # Analyses specifically for Ensembles
     if training_config["OOD_strategy"] == "Ensembles":
+        if verbose:
+            print(' \n')
+            print('Evaluating OOD dataset')
+
         #Postprocess networks
         postprocessor = Ensemble_postprocessor(main_config["output_dir"] + main_config["name"], main_config["name"] )
         postprocessor.setup()
@@ -281,17 +292,11 @@ def test_step(config_file, trainer, dataset):
         
         # Calculate Measures
         results_dict = {}
-
-        
-        if verbose:
-            print(' \n')
-            print('Evaluating OOD dataset')
-
         results_dict = evaluate_OOD(
             conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
         )
 
-        if not dataset_config["scenario"].startswith('s_'):
+        if not dataset_config["scenario"].startswith('s_'): # For the subsetting data no "celltype" scenarui, already included in "dataset scenario"
             if verbose:
                 print(' \n')
                 print('Evaluating OOD celltypes')
@@ -310,17 +315,17 @@ def test_step(config_file, trainer, dataset):
             results_dict,
             main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
         )
+
     else:
+        # load network (with ensembles in postprocessor)
         if training_config["OOD_strategy"] == "Posterior":
             model =  LitPostNN.load_from_checkpoint(main_config["output_dir"] + main_config["name"] + "/" + main_config["name"] + "_best_model.ckpt")
 
         else:
-            # load model from best checkpoint
             model =  LitBasicNN.load_from_checkpoint(main_config["output_dir"] + main_config["name"] + "/" + main_config["name"] + "_best_model.ckpt")
+        network = model.NN #model is the trainer instance, so change to network
 
-        # load network
-        network = model.NN 
-        print(network)
+
         # Logger
         Logger = TensorBoardLogger(
             main_config["output_dir"] + "tb_logger/", name=main_config["name"]
@@ -341,15 +346,15 @@ def test_step(config_file, trainer, dataset):
 
         # Implement for Knn a sweep for values of K
         if training_config["OOD_strategy"] == "Knn":
-            print('HERE')
             if verbose:
                 print('Start Knn postprocessor sweep:')
+            
             results_dict = dict()
             for k in [50,100,200,500,1000]:
                 if verbose:
                     ('\t ' + str(k))
                 postprocessor = KNN_postprocessor(k)
-                postprocessor.setup( network, test_X)
+                postprocessor.setup(network, test_X)
                 pred, conf = postprocessor.postprocess(
                         network, test_X)
                 results_dict_ = {}
@@ -375,7 +380,7 @@ def test_step(config_file, trainer, dataset):
                             print("No OOD celltypes, so no celltype analysis")
                 results_dict[k] = results_dict_
             
-            
+        # For Posterior natworks, the postprocessing is also different    
         elif training_config["OOD_strategy"] == "Posterior":
             postprocessor = postprocessor_dict[training_config["OOD_strategy"]]
             pred, conf = postprocessor.postprocess( 
@@ -409,7 +414,9 @@ def test_step(config_file, trainer, dataset):
                 else:
                     results_dict["celltype"] = None
                     if verbose:
+        
                         print("No OOD celltypes, so no celltype analysis")
+        # For EBO and Knn                
         else:
             postprocessor = postprocessor_dict[training_config["OOD_strategy"]]
             pred, conf, scores = postprocessor.postprocess( 
@@ -438,23 +445,6 @@ def test_step(config_file, trainer, dataset):
                     results_dict["celltype"] = None
                     if verbose:
                         print("No OOD celltypes, so no celltype analysis")
-
-            # R = accuracy_reject_curves(conf.detach().numpy(), y_true.detach().numpy(), pred.detach().numpy())
-            # plot_AR_curves(
-            #     R,
-            #     main_config["output_dir"]
-            #     + main_config["name"]
-            #     + "/"
-            #     + main_config["name"]
-            #     + "_AR_plot.png",
-            # )
-            # R.to_csv(
-            #     main_config["output_dir"]
-            #     + main_config["name"]
-            #     + "/"
-            #     + main_config["name"]
-            #     + "_AR.csv"
-            # )
         print("\n")
         # save results
         save_dict_to_json(
@@ -462,7 +452,7 @@ def test_step(config_file, trainer, dataset):
             main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
         )
         
-        trainer.test(model, datamodule=dataset, ckpt_path = "best")
+        trainer.test(model, datamodule=dataLoader, ckpt_path = "best")
 
     if verbose:
         print("Testing complete")
@@ -553,7 +543,7 @@ elif args.Run_step == "test":
 elif args.Run_step == "all":
     # Training
     start = time.time()
-    model, dataset = train_step(args.config_file, train_test_together=True)
+    model, dataLoader = train_step(args.config_file, train_test_together=True)
     end = time.time()
     if main_config["verbose"]:
         print("Total training time", end - start)
@@ -561,7 +551,7 @@ elif args.Run_step == "all":
 
     # Testing
     start = time.time()
-    scores, ytrue, predictions = test_step(args.config_file, model, dataset)
+    scores, ytrue, predictions = test_step(args.config_file, model, dataLoader)
     end = time.time()
     if main_config["verbose"]:
         print("Total OOD testing time", end - start)

@@ -37,7 +37,6 @@ class BaseDataset(Dataset):  # Input for the LightningDataModule
 
 
 ## DataModules
-# NOTE: for all the test datasets generated there is ID data so that the calculation of the metrics becomes possible
 class LitLungDataModule(L.LightningDataModule):
     def __init__(
         self,
@@ -69,11 +68,13 @@ class LitLungDataModule(L.LightningDataModule):
         batch_size : int
         val_size : float
             fraction of training data used for validation
+        test_size : float
+            fraction of total data used for testing
         num_workers : int
             number of available cpu cores
-        name : _str
+        name : str
             name of the analysis
-        min_celltypes : int
+        min_celltypes : int, optional
             minimum amount of observations that need to be present to prevent filtering for every cell type
         verbose : str, optional
             by default "True"
@@ -93,7 +94,7 @@ class LitLungDataModule(L.LightningDataModule):
             self.conversion_dict = json.load(json_file)
 
     def filter_counts_h5ad(self, data, labels, n):
-        """Filter celltypes with less than 10 instances
+        """Filter celltypes with less than n instances
         Parameters
         ----------
         data : annData
@@ -1268,10 +1269,12 @@ class LitCOPDDataModule(L.LightningDataModule):
             filename and dir where conversion dictionary of labels is saved
         scenario : str
             train/test split scenario
-            options: patient_1 - patient_20, COPD, IPF
+            options: patient_1 - patient_20, COPD, IPF an ds_2, s_5 and s_10
         batch_size : int
         val_size : float
             fraction of training data used for validation
+        test_size: float
+            fraction of total data used for testing
         num_workers : int
             number of available cpu cores
         name : _str
@@ -1298,7 +1301,6 @@ class LitCOPDDataModule(L.LightningDataModule):
         with open(label_conversion_file) as json_file:
             self.conversion_dict = json.load(json_file)
         
-    
 
     def default(obj):
         if type(obj).__module__ == np.__name__:
@@ -1316,21 +1318,19 @@ class LitCOPDDataModule(L.LightningDataModule):
             json.dump(d_, f1, default=self.default)
 
     def prepare_data(self):
-        # Read in the data
+        # Read in the data and normalize
         h5ad = sc.read_h5ad(self.data_dir + self.data_file)
+        h5ad.var = pd.read_csv('/data/gent/438/vsc43883/Data/COPD/GSE136831_AllCells.GeneIDs.txt', sep = "\t")
+        sc.pp.normalize_total(h5ad, target_sum = 10000)
+        sc.pp.log1p(h5ad)
 
-        # Save fixed order of patients to dile
+        # Save fixed order of patients to file
         if self.scenario.startswith("patient"):
             #if not os.path.exists( self.data_dir + "COPD_control_patients.json"):
             patients = np.unique(h5ad.obs.iloc[[i == "Control" for i in h5ad.obs['Disease_Identity']],:]["Subject_Identity"])
             self.patients = {str(count+1): value for count,value in enumerate([i for i in patients if i not in ['084C', '244C']]) } 
             self.save_dict_to_json(self.patients, self.data_dir + "COPD_control_patients.json")
-            
-            # else:
-            #     with open(self.data_dir + "COPD_control_patients.json") as json_file:
-            #         self.patients = json.loads(json_file.read())
 
-       
         self.data_ID, self.labels_ID, self.data_OOD, self.labels_OOD = self.filter_counts_h5ad(sparse.csr_matrix(h5ad.X), h5ad.obs)
        
         
@@ -1436,7 +1436,6 @@ class LitCOPDDataModule(L.LightningDataModule):
             obs_OOD_fc = obs_OOD.iloc[[i not in celltype_to_filter for i in obs_OOD.values]]
             data_OOD_fc = data_OOD[[i not in celltype_to_filter for i in obs_OOD.values],:]
             self.celltypes_filtered_OOD = celltype_to_filter
-    
 
             # For ID
             labels_ID = obs_ID.values
@@ -1445,6 +1444,7 @@ class LitCOPDDataModule(L.LightningDataModule):
             obs_ID_fc = obs_ID.iloc[[i not in celltype_to_filter for i in obs_ID]]
             data_ID_fc = data_ID[[i not in celltype_to_filter for i in obs_ID],:]
             self.celltypes_filtered_ID = celltype_to_filter
+
         elif self.scenario.startswith('s_'):
             # Filter with less than 10 celltypes
             labels_obs = scen_obs["Subclass_Cell_Identity"]
@@ -1462,13 +1462,10 @@ class LitCOPDDataModule(L.LightningDataModule):
             stratify=scen_obs_["Subclass_Cell_Identity"],
             random_state=0)
 
-
         else:
             print('Invalid scenario')
 
-        # Filter out cell types with less than self.min_celltypes observations
-        # For OOD
-        # Exclude OOD labels ID data
+        # Filter out cell types with less than self.min_celltypes observations for s_
         if self.scenario.startswith('s_'):
             len_tot = len(scen_obs["Subclass_Cell_Identity"])
 
@@ -1624,7 +1621,6 @@ class LitCOPDDataModule(L.LightningDataModule):
         return ind, idx_OOD
 
     def setup(self,stage):
-        """NOTE: also slightly different that other functions: all in one setup function"""
         # Read in data and perform filtering
         self.prepare_data()
 
