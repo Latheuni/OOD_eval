@@ -1663,14 +1663,14 @@ class LitCOPDDataModule(L.LightningDataModule):
         )
 
     def train_dataloader(self):
-            return DataLoader(self.data_train, batch_size=self.batch, num_workers=self.cpus, shuffle = True)
+            return DataLoader(self.data_train, batch_size=self.batch, num_workers=self.cpus, shuffle = True, pin_memory = True, pin_memory_device = "cuda")
 
     def val_dataloader(self):
         return DataLoader(self.data_val, batch_size=self.batch, num_workers=self.cpus)
 
     def test_dataloader(self):
         test_loader = DataLoader(
-            self.data_test, batch_size=self.batch, num_workers=self.cpus
+            self.data_test, batch_size=self.batch, num_workers=self.cpus, pin_memory = True, pin_memory_device = "cuda"
         )
         return [test_loader]
 

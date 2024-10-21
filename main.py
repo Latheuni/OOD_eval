@@ -250,7 +250,7 @@ def train_step(config_file, train_test_together=False):
         return trainer, DataLoader 
 
 
-def test_step(config_file, trainer, dataLoader):
+def test_step(config_file, dataLoader):
     """
     model can be or path to save checkpoint or an actual model
     """
@@ -319,6 +319,7 @@ def test_step(config_file, trainer, dataLoader):
     else:
         # load network (with ensembles in postprocessor)
         if training_config["OOD_strategy"] == "Posterior":
+            os.chdir(main_config["output_dir"] + main_config["name"] + "/" + main_config["name"])
             model =  LitPostNN.load_from_checkpoint(main_config["output_dir"] + main_config["name"] + "/" + main_config["name"] + "_best_model.ckpt")
 
         else:
@@ -452,7 +453,7 @@ def test_step(config_file, trainer, dataLoader):
             main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
         )
         
-        trainer.test(model, datamodule=dataLoader, ckpt_path = "best")
+        #trainer.test(model, datamodule=dataLoader, ckpt_path = "best")
 
     if verbose:
         print("Testing complete")
@@ -520,8 +521,11 @@ if args.Run_step == "train":
 
 elif args.Run_step == "test":
     start = time.time()
+    DataLoader = load_dataset(args.config_file, train = True)
+    DataLoader.prepare_data()
+    DataLoader.setup(stage="train")
     scores, ytrue, predictions = test_step(
-        args.config_file, main_config["output_dir"] + args.filename
+        args.config_file, DataLoader
     )
     end = time.time()
     if main_config["verbose"]:
@@ -551,7 +555,7 @@ elif args.Run_step == "all":
 
     # Testing
     start = time.time()
-    scores, ytrue, predictions = test_step(args.config_file, model, dataLoader)
+    scores, ytrue, predictions = test_step(args.config_file, dataLoader)
     end = time.time()
     if main_config["verbose"]:
         print("Total OOD testing time", end - start)

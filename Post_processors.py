@@ -16,10 +16,14 @@ class base_postprocessor:
         for i, (batch, y) in enumerate(data):
             batch = batch.to(self.device)
             if i == 0:
-                output= net(batch)
+                o = net(batch)
+                output = o.detach().to('cpu')
             else:
                 o = net(batch)
+                o = o.detach().to('cpu')
                 output = torch.cat((output,o),0)
+            del batch
+            torch.cuda.empty_cache()
         return output
 
     def postprocess(self, net, data):
@@ -38,16 +42,20 @@ class dropout_postprocessor:
         for i, (batch, y) in enumerate(data):
             batch = batch.to(self.device)
             if i == 0:
-                output = net.forward(batch)
+                o = net.forward(batch)
+                output = o.detach().to('cpu')
             else:
                 o = net.forward(batch)
+                o = o.detach().to('cpu')
                 output = torch.cat((output,o),0) 
+            del batch
+            torch.cuda.empty_cache()
         return(output)
 
     def postprocess(self, net, data):
         net = net.to(self.device)
         net = net.train()  # to be in training mode  
-        logits_list = [self._forward_batches(data) for i in range(self.dropout_times)] # pass in batches with the dtaaloader
+        logits_list = [self._forward_batches(net,data) for i in range(self.dropout_times)] # pass in batches with the dtaaloader
         logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
         for i in range(self.dropout_times):
             logits_mean += logits_list[i]
@@ -67,10 +75,14 @@ class EBO_postprocessor:
         for i, (batch, y) in enumerate(data):
             batch = batch.to(self.device)
             if i == 0:
-                output= net(batch)
+                o = net(batch)
+                output = o.detach().to('cpu')
             else:
                 o = net(batch)
+                o = o.detach().to('cpu')
                 output = torch.cat((output,o),0)
+            del batch
+            torch.cuda.empty_cache()
         return output
 
     def postprocess(self, net, data):
@@ -94,11 +106,17 @@ class KNN_postprocessor():
         for i, (batch, y) in enumerate(data):
             batch = batch.to(self.device)
             if i == 0:
-                output, feature = net(batch, return_feature=True)
+                o, f = net(batch, return_feature=True)
+                output = o.detach().to('cpu')
+                feature = f.detach().to('cpu')
             else:
                 o, f = net(batch, return_feature=True)
-                feature = torch.cat((feature,f),0)
+                o = o.detach().to('cpu')
+                f = f.detach().to('cpu')
+                feature = torch.cat((feature,f),0) 
                 output = torch.cat((output,o),0)
+            del batch
+            torch.cuda.empty_cache()
         return output, feature
 
     def setup(self, net, data):
@@ -116,7 +134,7 @@ class KNN_postprocessor():
             pass
             
     def postprocess(self, net, data):
-        output, feature = self._net_with_feature(net, data) # pass in batches with the dataloader
+        output, feature = self._batches_forward(net, data) # pass in batches with the dataloader
         feature_normed = KNN_normalizer(feature.detach().cpu().numpy())
         D, _ = self.index.search(
             feature_normed,
@@ -144,10 +162,14 @@ class Ensemble_postprocessor():
         for i, (batch, y) in enumerate(data):
             batch = batch.to(self.device)
             if i == 0:
-                output= net(batch)
+                o = net(batch)
+                output = o.detach().to('cpu')
             else:
                 o = net(batch)
+                o = o.detach().to('cpu')
                 output = torch.cat((output,o),0)
+            del batch
+            torch.cuda.empty_cache()
         return output
 
     def setup(self):
@@ -186,19 +208,24 @@ class Posterior_postprocessor():
             self.dev = 'cpu'
 
     def _batches_forward(self,net, data):
-        net = net.to(self.device)
+        net = net.to(self.dev)
         for i, (batch, y) in enumerate(data):
-            batch = batch.to(self.device)
+            batch = batch.to(self.dev)
             if i == 0:
-                alpha, soft_output_pred = net(batch)
+                a, s = net(batch)
+                alpha = a.detach().to('cpu')
+                soft_output_pred = s.detach().to('cpu')
             else:
                 a, s = net(batch)
+                a = a.detach().to('cpu')
+                s = s.detach().to('cpu')
                 alpha = torch.cat((alpha, a),0)
                 soft_output_pred = torch.cat((soft_output_pred,s),0)
+            del batch
+            torch.cuda.empty_cache()
         return alpha, soft_output_pred
 
     def postprocess(self, net, data):
-        data = data.to(self.dev)
         if self.loss == "UCE":
             alpha, soft_output_pred = self._batches_forward(net,data)
         else:
