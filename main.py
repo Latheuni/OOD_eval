@@ -319,8 +319,8 @@ def test_step(config_file, dataLoader):
     else:
         # load network (with ensembles in postprocessor)
         if training_config["OOD_strategy"] == "Posterior":
-            os.chdir(main_config["output_dir"] + main_config["name"] + "/" + main_config["name"])
-            model =  LitPostNN.load_from_checkpoint(main_config["output_dir"] + main_config["name"] + "/" + main_config["name"] + "_best_model.ckpt")
+            os.chdir(main_config["output_dir"] + "/" + main_config["name"])
+            model =  LitPostNN.load_from_checkpoint(main_config["output_dir"] + '/' + main_config["name"] + "/" + main_config["name"] + "_best_model.ckpt")
 
         else:
             model =  LitBasicNN.load_from_checkpoint(main_config["output_dir"] + main_config["name"] + "/" + main_config["name"] + "_best_model.ckpt")
