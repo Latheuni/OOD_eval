@@ -34,9 +34,10 @@ class base_postprocessor:
 
 
 class dropout_postprocessor:
-    def __init__(self, dropout_times = 10):
+    def __init__(self, dropout_times = 10, mode = "normal"):
         self.dropout_times = dropout_times
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.mode = mode
 
     def _forward_batches(self, net, data):
         for i, (batch, y) in enumerate(data):
@@ -51,25 +52,60 @@ class dropout_postprocessor:
             del batch
             torch.cuda.empty_cache()
         return(output)
-
     def postprocess(self, net, data):
-        net = net.to(self.device)
-        net = net.train()  # to be in training mode  
-        logits_list = [self._forward_batches(net,data) for i in range(self.dropout_times)] # pass in batches with the dtaaloader
-        logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
-        for i in range(self.dropout_times):
-            logits_mean += logits_list[i]
-        logits_mean /= self.dropout_times
-        score = torch.softmax(logits_mean, dim=1)
-        conf, pred = torch.max(score, dim=1)
-        return pred, conf, score
+        if self.mode == "normal":
+            net = net.to(self.device)
+            net = net.train()  # to be in training mode  
+            logits_list = [self._forward_batches(net,data) for i in range(self.dropout_times)] # pass in batches with the dataloader
+            logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
+            for i in range(self.dropout_times):
+                logits_mean += logits_list[i]
+            logits_mean /= self.dropout_times
+            score = torch.softmax(logits_mean, dim=1)
+            conf, pred = torch.max(score, dim=1)
+            return pred, conf, score
+        elif self.mode == "variance":
+            net = net.to(self.device)
+            net = net.train()  # to be in training mode  
+            logits_list = [self._forward_batches(net,data) for i in range(self.dropout_times)] # pass in batches with the dataloader
+
+            # calculate predictions
+            logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
+            for i in range(self.dropout_times):
+                logits_mean += logits_list[i]
+            logits_mean /= self.dropout_times
+            score = torch.softmax(logits_mean, dim=1)
+            _, pred = torch.max(score, dim=1)
+
+            # calculate conf based on variance of logits
+            ## perform softmax on the logits
+            logits_list_softmax = []
+            
+            for i in range(self.dropout_times):
+                logits_list_softmax.append(torch.softmax(logits_list[i], dim=1))
+            #input = torch.empty(list(logits_list_softmax[0].shape)[0])
+            logits_preds = []
+            
+            for n in range(len(pred)):
+                n_ = []
+                for i in range(self.dropout_times):
+                    
+                        if i == 0:
+                            n_ = [logits_list_softmax[i][n][pred[n]]]
+                        else:
+                            n_.append(logits_list_softmax[i][n][pred[n]])
+                logits_preds.append(n_)
+            var = np.var(logits_preds, axis=1)
+            conf = 1-var
+            return pred, conf, score
+        else:
+            raise ValueError("mode argument is invalid, needs to be empty, str(normal) or str(variance)")
 
 
 class EBO_postprocessor:
     def __init__(self, temperature=1):
         self.temperature = temperature
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
     def _batches_forward(self,net, data):
         net = net.to(self.device)
         for i, (batch, y) in enumerate(data):
@@ -146,10 +182,11 @@ class KNN_postprocessor():
 
 
 class Ensemble_postprocessor():
-    def __init__(self, model_dir, name_analysis):
+    def __init__(self, model_dir, name_analysis, mode = "normal"):
         super(Ensemble_postprocessor, self).__init__()
         
         self.checkpoint_root = model_dir
+        self.mode = mode
         self.num_networks = 10
         self.checkpoint_dirs = [
             name_analysis +'_' + str(i) + "_best_model.ckpt"
@@ -184,19 +221,55 @@ class Ensemble_postprocessor():
         self.networks = [i.to(self.device) for i in self.networks]
 
     def postprocess(self, data):
-        # Get output model
-        logits_list = [
-            self._batches_forward(self.networks[i],data)for i in range(self.num_networks)
-        ]
+        if self.mode == "normal":
+            # Get output model
+            logits_list = [
+                self._batches_forward(self.networks[i],data)for i in range(self.num_networks)
+            ]
 
-        logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
-        for i in range(self.num_networks):
-            logits_mean += logits_list[i]
-        logits_mean /= self.num_networks
+            logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
+            for i in range(self.num_networks):
+                logits_mean += logits_list[i]
+            logits_mean /= self.num_networks
 
-        score = torch.softmax(logits_mean, dim=1) 
-        conf, pred = torch.max(score, dim=1)
-        return pred, conf
+            score = torch.softmax(logits_mean, dim=1) 
+            conf, pred = torch.max(score, dim=1)
+            return pred, conf, score
+        elif self.mode == "variance":
+            logits_list = [
+                self._batches_forward(self.networks[i],data)for i in range(self.num_networks)
+            ]
+
+            # calculate predictions
+            logits_mean = torch.zeros_like(logits_list[0], dtype=torch.float32)
+            for i in range(self.dropout_times):
+                logits_mean += logits_list[i]
+            logits_mean /= self.dropout_times
+            score = torch.softmax(logits_mean, dim=1)
+            _, pred = torch.max(score, dim=1)
+
+            # calculate conf based on variance of logits
+            ## perform softmax on the logits
+            logits_list_softmax = []
+            
+            for i in range(len(self.networks)):
+                logits_list_softmax.append(torch.softmax(logits_list[i], dim=1))
+            #input = torch.empty(list(logits_list_softmax[0].shape)[0])
+            logits_preds = []
+            
+            for n in range(len(pred)):
+                n_ = []
+                for i in range(len(self.networks)):
+                        if i == 0:
+                            n_ = [logits_list_softmax[i][n][pred[n]]]
+                        else:
+                            n_.append(logits_list_softmax[i][n][pred[n]])
+                logits_preds.append(n_)
+            var = np.var(logits_preds, axis=1)
+            conf = 1-var
+            return pred, conf, score
+        else:
+            raise ValueError("mode argument is invalid, needs to be empty, str(normal) or str(variance)")
 
 class Posterior_postprocessor(): 
     def __init__(self, uncertainty_type = "epistemic", loss = "UCE"):

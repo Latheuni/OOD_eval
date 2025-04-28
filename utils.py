@@ -52,6 +52,7 @@ def create_config(
     max_epochs=350,
     accelerator="gpu",
     devices=1,
+    integrated = "False"
 ):
     if dataset_name == "Pancreas":
         d = {
@@ -73,6 +74,7 @@ def create_config(
                 "validation_size": validation_size,
                 "test_size": test_size,
                 "min_celltypes": min_celltypes,
+                "integrated": integrated,
             },
             "network": {
                 "model": model,
@@ -110,6 +112,7 @@ def create_config(
                 "test_size": test_size,
                 "min_celltypes": min_celltypes,
                 "scenario": scenario,
+                "integrated": integrated,
             },
             "network": {
                 "model": model,
@@ -218,6 +221,7 @@ def load_dataset(config_file, train = True):
             training_config["cpus"],
             main_config["name"],
             verbose=main_config["verbose"],
+            integrated = dataset_config["integrated"]
         )
         if not train:
             OOD_label_dataset = pd.read_csv(
@@ -252,6 +256,7 @@ def load_dataset(config_file, train = True):
             training_config["cpus"],
             main_config["name"],
             verbose=main_config["verbose"],
+            integrated = dataset_config["integrated"]
         )
         if not train:
             OOD_label_dataset = pd.read_csv(

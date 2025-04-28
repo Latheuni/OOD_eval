@@ -286,9 +286,15 @@ def test_step(config_file, dataLoader):
             print('Evaluating OOD dataset')
 
         #Postprocess networks
-        postprocessor = Ensemble_postprocessor(main_config["output_dir"] + main_config["name"], main_config["name"] )
+        if "mode" in main_config.keys():
+            if main_config["mode"] == "variance":
+                postprocessor = Ensemble_postprocessor(main_config["output_dir"] + main_config["name"], main_config["name"], mode = main_config['mode'] )
+            else:
+                postprocessor = Ensemble_postprocessor(main_config["output_dir"] + main_config["name"], main_config["name"] )
+        else:
+            postprocessor = Ensemble_postprocessor(main_config["output_dir"] + main_config["name"], main_config["name"] )
         postprocessor.setup()
-        pred, conf = postprocessor.postprocess(test_X)
+        pred, conf, score = postprocessor.postprocess(test_X)
         
         # Calculate Measures
         results_dict = {}
@@ -311,10 +317,22 @@ def test_step(config_file, dataLoader):
                     print("No OOD celltypes, so no celltype analysis")
         
         # Save results
-        save_dict_to_json(
-            results_dict,
-            main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
-        )
+        if "mode" in main_config.keys():
+            if main_config["mode"] == "variance":
+                save_dict_to_json(
+                    results_dict,
+                    main_config["output_dir"] + main_config["name"] + "/" + main_config["name"] + '_variance_',
+                )
+            else:
+                save_dict_to_json(
+                results_dict,
+                main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
+                )
+        else:
+            save_dict_to_json(
+                results_dict,
+                main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
+            )
 
     else:
         # load network (with ensembles in postprocessor)
@@ -338,12 +356,29 @@ def test_step(config_file, dataLoader):
         callbacks_list = [pred_writer, device_stats]
 
         # PostProcess
-        postprocessor_dict = {
-            "logitnorm": base_postprocessor(),
-            "dropout": dropout_postprocessor(),
-            "EBO": EBO_postprocessor(),
-            "Posterior": Posterior_postprocessor(),
-        }
+        if "mode" in main_config.keys():
+            if main_config["mode"] == "variance":
+                postprocessor_dict = {
+                    "logitnorm": base_postprocessor(),
+                    "dropout": dropout_postprocessor(mode = main_config['mode']),
+                    "EBO": EBO_postprocessor(),
+                    "Posterior": Posterior_postprocessor(),
+                }
+            else:
+                postprocessor_dict = {
+                "logitnorm": base_postprocessor(),
+                "dropout": dropout_postprocessor(),
+                "EBO": EBO_postprocessor(),
+                "Posterior": Posterior_postprocessor(),
+                }
+
+        else:
+            postprocessor_dict = {
+                "logitnorm": base_postprocessor(),
+                "dropout": dropout_postprocessor(),
+                "EBO": EBO_postprocessor(),
+                "Posterior": Posterior_postprocessor(),
+            }
 
         # Implement for Knn a sweep for values of K
         if training_config["OOD_strategy"] == "Knn":
@@ -417,7 +452,7 @@ def test_step(config_file, dataLoader):
                     if verbose:
         
                         print("No OOD celltypes, so no celltype analysis")
-        # For EBO and Knn                
+                       
         else:
             postprocessor = postprocessor_dict[training_config["OOD_strategy"]]
             pred, conf, scores = postprocessor.postprocess( 
@@ -431,27 +466,41 @@ def test_step(config_file, dataLoader):
                 print('Evaluating OOD dataset')
 
             results_dict = evaluate_OOD(
-                conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
-            )
+                conf, pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_dataset.iloc[:,0].values, "dataset", results_dict
+                        )
             if not dataset_config["scenario"].startswith('s_'):
                 if verbose:
                     print(' \n')
                     print('Evaluating OOD celltypes')
 
                 if not np.isnan(OOD_label_celltype.iloc[0,0]):
-                    results_dict = evaluate_OOD(
-                        conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
-                    )
+                        results_dict = evaluate_OOD(
+                            conf.detach().cpu().numpy(), pred.detach().cpu().numpy(), y_true.detach().cpu().numpy(), OOD_label_celltype.iloc[:,0].values, "celltype", results_dict
+                        )
                 else:
                     results_dict["celltype"] = None
                     if verbose:
                         print("No OOD celltypes, so no celltype analysis")
         print("\n")
         # save results
-        save_dict_to_json(
-            results_dict,
-            main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
-        )
+        if "mode" in main_config.keys():
+            if main_config["mode"] == "variance":
+                save_dict_to_json(
+                    results_dict,
+                    main_config["output_dir"] + main_config["name"] + "/" + main_config["name"] + '_variance_',
+                )
+            else:
+                save_dict_to_json(
+                results_dict,
+                main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
+                )
+        
+                
+        else:
+            save_dict_to_json(
+                results_dict,
+                main_config["output_dir"] + main_config["name"] + "/" + main_config["name"],
+            )
         
         #trainer.test(model, datamodule=dataLoader, ckpt_path = "best")
 
@@ -520,6 +569,7 @@ if args.Run_step == "train":
         print(" \n")
 
 elif args.Run_step == "test":
+    ## Note changed this for variance analyses
     start = time.time()
     DataLoader = load_dataset(args.config_file, train = True)
     DataLoader.prepare_data()
@@ -527,6 +577,8 @@ elif args.Run_step == "test":
     scores, ytrue, predictions = test_step(
         args.config_file, DataLoader
     )
+    # Added for now
+    main_config['mode'] = "variance"
     end = time.time()
     if main_config["verbose"]:
         print("Total OOD testing time", end - start)
@@ -534,14 +586,14 @@ elif args.Run_step == "test":
 
     # Saving
     save_numpy_array(
-        scores, main_config["output_dir"] + main_config["name"] + "_scores.csv"
+        scores, main_config["output_dir"] + main_config["name"] + "_variance_scores.csv"
     )
     save_numpy_array(
-        ytrue, main_config["output_dir"] + main_config["name"] + "_ytrue.csv"
+        ytrue, main_config["output_dir"] + main_config["name"] + "_variance_ytrue.csv"
     )
     save_numpy_array(
         predictions,
-        main_config["output_dir"] + main_config["name"] + "_predictions.csv",
+        main_config["output_dir"] + main_config["name"] + "_variance_predictions.csv",
     )
 
 elif args.Run_step == "all":

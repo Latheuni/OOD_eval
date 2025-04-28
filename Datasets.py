@@ -51,6 +51,8 @@ class LitLungDataModule(L.LightningDataModule):
         name,
         min_celltypes=10,
         verbose="True",
+        integrated = "False",
+
     ):
         """Lightning DataModule for the Lung dataset
 
@@ -92,6 +94,7 @@ class LitLungDataModule(L.LightningDataModule):
         self.cpus = num_workers
         with open(label_conversion_file) as json_file:
             self.conversion_dict = json.load(json_file)
+        self.integrated = integrated
 
     def filter_counts_h5ad(self, data, labels, n):
         """Filter celltypes with less than n instances
@@ -118,7 +121,23 @@ class LitLungDataModule(L.LightningDataModule):
     def prepare_data(self):
         """Read in the Data"""
         h5ad = sc.read_h5ad(self.data_dir + self.data_file)
-        self.data = sparse.csr_matrix(h5ad.X)
+        if self.integrated == "True":
+            print('Data integration in process')
+            sc.pp.highly_variable_genes(h5ad)
+            scvi.model.SCVI.setup_anndata(h5ad, layer="counts", batch_key="batch")
+            model = scvi.model.SCVI(h5ad, n_layers=2, n_latent=30, gene_likelihood="nb")
+            model.train(max_epochs=400)
+            SCVI_LATENT_KEY = "X_scVI"
+            h5ad.obsm[SCVI_LATENT_KEY] = model.get_latent_representation()
+            if SCVI_LATENT_KEY in h5ad.obsm:
+                self.data =sparse.csr_matrix(h5ad.obsm[SCVI_LATENT_KEY])
+                if self.verbose == "True":
+                    print('Look into integrated data', self.data.todense().shape)
+
+            else:
+                raise ValueError('Something went wrong with integration, no X_scVI key in anndata object')
+        else:
+            self.data = sparse.csr_matrix(h5ad.X)
         self.obs = h5ad.obs
 
     def pick_scenario(self):
@@ -470,10 +489,23 @@ class LitLungDataModule(L.LightningDataModule):
         return len(list((self.conversion_dict.keys())))
 
     def n_features(self):
-        """Return the number od features"""
+        """Return the number of features"""
         h5ad = sc.read_h5ad(self.data_dir + self.data_file)
-        data = sparse.csr_matrix(h5ad.X)
-        if self.verbose:
+        if self.integrated == "True":
+            sc.pp.highly_variable_genes(h5ad)
+            scvi.model.SCVI.setup_anndata(h5ad, layer="counts", batch_key="batch")
+            model = scvi.model.SCVI(h5ad, n_layers=2, n_latent=30, gene_likelihood="nb")
+            model.train(max_epochs=400)
+            SCVI_LATENT_KEY = "X_scVI"
+            h5ad.obsm[SCVI_LATENT_KEY] = model.get_latent_representation()
+            if SCVI_LATENT_KEY in h5ad.obsm:
+               data =sparse.csr_matrix(h5ad.obsm[SCVI_LATENT_KEY])
+            else:
+                raise ValueError('Something went wrong with integration, no X_scVI key in anndata object')
+        else:
+             data = sparse.csr_matrix(h5ad.X)
+
+        if self.verbose == "True":
             print('n_features dataloader', data.shape[1] )
         return data.shape[1]
 
@@ -508,6 +540,7 @@ class LitImmuneDataModule(L.LightningDataModule):
         name,
         min_celltypes=10,
         verbose="True",
+        integrated ="False",
     ):
         """Lightning DataModule for the immune dataset
 
@@ -550,6 +583,7 @@ class LitImmuneDataModule(L.LightningDataModule):
         self.cpus = num_workers
         with open(label_conversion_file) as json_file:
             self.conversion_dict = json.load(json_file)
+        self.integrated = integrated
 
     def filter_counts_h5ad(self, data, labels, n):
         """Filter celltypes with less than 10 instances
@@ -569,7 +603,22 @@ class LitImmuneDataModule(L.LightningDataModule):
     def prepare_data(self):
         """Read in the Data"""
         h5ad = sc.read_h5ad(self.data_dir + self.data_file)
-        self.data = sparse.csr_matrix(h5ad.X)
+        if self.integrated == "True":
+            print('Data integration in process')
+            sc.pp.highly_variable_genes(h5ad, subset = True)
+            sc.pp.pca(h5ad)
+            sc.external.pp.scanorama_integrate(h5ad, key = "batch")
+            print('Integrated?', 'X_scanorama' in h5ad.obsm)
+            if 'X_scanorama' in h5ad.obsm:
+                print(h5ad.obsm["X_scanorama"])
+                self.data =sparse.csr_matrix(h5ad.obsm["X_scanorama"])
+                if self.verbose:
+                    print('Look into integrated data', self.data.todense().shape)
+
+            else:
+                raise ValueError('Something went wrong with integration, no X_scanorama key in anndata object')
+        else:
+            self.data = sparse.csr_matrix(h5ad.X)
         self.obs = h5ad.obs
 
     def pick_scenario(self):
@@ -931,7 +980,22 @@ class LitImmuneDataModule(L.LightningDataModule):
     def n_features(self):
         """Return the number of features"""
         h5ad = sc.read_h5ad(self.data_dir + self.data_file)
-        data = sparse.csr_matrix(h5ad.X)
+        if self.integrated == "True":
+            sc.pp.highly_variable_genes(h5ad, subset = True)
+            sc.pp.pca(h5ad)
+            sc.external.pp.scanorama_integrate(h5ad, key = "batch")
+            print('Integrated?', 'X_scanorama' in h5ad.obsm)
+            if 'X_scanorama' in h5ad.obsm:
+                print(h5ad.obsm["X_scanorama"])
+                data =sparse.csr_matrix(h5ad.obsm["X_scanorama"])
+
+            else:
+                raise ValueError('Something went wrong with integration, no X_scanorama key in anndata object')
+        else:
+            data = sparse.csr_matrix(h5ad.X)
+
+
+
         if self.verbose:
             print('n_features dataloader', data.shape[1] )
         return data.shape[1]
@@ -1257,7 +1321,7 @@ class LitCOPDDataModule(L.LightningDataModule):
         min_cells_patient = 500,
         verbose= True,
     ):
-        """Lightning DataModule for the Lung dataset
+        """Lightning DataModule for the COPD dataset
 
         Parameters
         ----------
